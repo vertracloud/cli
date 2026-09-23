@@ -1,0 +1,6 @@
+bin/
+dist/
+.claude/
+CLAUDE.md
+AGENTS.md
+AGENT.md
