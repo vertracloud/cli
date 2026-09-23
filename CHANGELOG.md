@@ -13,5 +13,3 @@
 * **local:** add project detection, zip packaging and doctor checks ([ae796d8](https://github.com/vertracloud/cli/commit/ae796d8e1a4c2997304ac028bc993bec08d5c832))
 * **resources:** add shared resource lookup ([2097197](https://github.com/vertracloud/cli/commit/209719775d23fe280b80db9694b3ec0039effb36))
 * **ui:** add table, JSON and localized output ([7dd423a](https://github.com/vertracloud/cli/commit/7dd423ad9ebf371009266a482e9b8a4f3058dc84))
-
-## Changelog
