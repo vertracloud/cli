@@ -524,8 +524,6 @@ func cell(item map[string]any, key, kind, locale string) (string, func(string) s
 		case float64(2), "database":
 			return text(locale, "database"), nil
 		}
-	case "auto_restart":
-		return text(locale, map[bool]string{true: "enabled", false: "disabled"}[value == true]), nil
 	case "resources":
 		if list, ok := value.([]any); ok {
 			return fmt.Sprint(len(list)), nil
@@ -884,9 +882,9 @@ var translations = map[string]map[string]string{
 		"empty": "Nenhum resultado.", "status": "Estado", "id": "ID", "name": "Nome", "created_at": "Criado em", "updated_at": "Atualizado em",
 		"last_snapshot": "Último snapshot", "offline_since": "Offline desde", "cpu": "CPU", "ram": "Memória", "storage": "Armazenamento",
 		"language": "Linguagem", "type": "Tipo", "description": "Descrição", "domain": "Domínio", "subdomain": "Subdomínio",
-		"custom_domain": "Domínio personalizado", "auto_restart": "Reinício automático", "applications": "Aplicações", "databases": "Bancos de dados",
+		"custom_domain": "Domínio personalizado", "applications": "Aplicações", "databases": "Bancos de dados",
 		"email": "E-mail", "locale": "Idioma", "current": "Atual", "available": "Disponíveis", "ok": "Concluído.", "file": "Arquivo",
-		"folder": "Pasta", "not_configured": "Não configurado", "enabled": "Ativado", "disabled": "Desativado", "website": "Site", "bot": "Bot",
+		"folder": "Pasta", "not_configured": "Não configurado", "website": "Site", "bot": "Bot",
 		"yes": "Sim", "no": "Não", "online": "online", "offline": "offline", "installing": "instalando", "uptime": "Tempo ativo",
 		"network": "Rede", "plan": "Plano", "members_count": "Membros", "resource_name": "Recurso", "resource_type": "Tipo",
 		"resource_id": "ID do recurso", "size": "Tamanho", "date": "Data", "color": "Cor", "resources": "Recursos", "key": "Chave",
@@ -915,9 +913,9 @@ var translations = map[string]map[string]string{
 		"empty": "No hay resultados.", "status": "Estado", "id": "ID", "name": "Nombre", "created_at": "Creado", "updated_at": "Actualizado",
 		"last_snapshot": "Última instantánea", "offline_since": "Sin conexión desde", "cpu": "CPU", "ram": "Memoria", "storage": "Almacenamiento",
 		"language": "Lenguaje", "type": "Tipo", "description": "Descripción", "domain": "Dominio", "subdomain": "Subdominio",
-		"custom_domain": "Dominio personalizado", "auto_restart": "Reinicio automático", "applications": "Aplicaciones", "databases": "Bases de datos",
+		"custom_domain": "Dominio personalizado", "applications": "Aplicaciones", "databases": "Bases de datos",
 		"email": "Correo", "locale": "Idioma", "current": "Actual", "available": "Disponibles", "ok": "Completado.", "file": "Archivo",
-		"folder": "Carpeta", "not_configured": "No configurado", "enabled": "Activado", "disabled": "Desactivado", "website": "Sitio web", "bot": "Bot",
+		"folder": "Carpeta", "not_configured": "No configurado", "website": "Sitio web", "bot": "Bot",
 		"yes": "Sí", "no": "No", "online": "activa", "offline": "apagada", "installing": "instalando", "uptime": "Tiempo activo",
 		"network": "Red", "plan": "Plan", "members_count": "Miembros", "resource_name": "Recurso", "resource_type": "Tipo",
 		"resource_id": "ID del recurso", "size": "Tamaño", "date": "Fecha", "color": "Color", "resources": "Recursos", "key": "Clave",
@@ -946,9 +944,9 @@ var translations = map[string]map[string]string{
 		"empty": "No results.", "status": "Status", "id": "ID", "name": "Name", "created_at": "Created", "updated_at": "Updated",
 		"last_snapshot": "Last snapshot", "offline_since": "Offline since", "cpu": "CPU", "ram": "Memory", "storage": "Storage",
 		"language": "Language", "type": "Type", "description": "Description", "domain": "Domain", "subdomain": "Subdomain",
-		"custom_domain": "Custom domain", "auto_restart": "Auto restart", "applications": "Applications", "databases": "Databases",
+		"custom_domain": "Custom domain", "applications": "Applications", "databases": "Databases",
 		"email": "Email", "locale": "Language", "current": "Current", "available": "Available", "ok": "Done.", "file": "File",
-		"folder": "Folder", "not_configured": "Not configured", "enabled": "On", "disabled": "Off", "website": "Website", "bot": "Bot",
+		"folder": "Folder", "not_configured": "Not configured", "website": "Website", "bot": "Bot",
 		"yes": "Yes", "no": "No", "online": "online", "offline": "offline", "installing": "installing", "uptime": "Uptime",
 		"network": "Network", "plan": "Plan", "members_count": "Members", "resource_name": "Resource", "resource_type": "Type",
 		"resource_id": "Resource ID", "size": "Size", "date": "Date", "color": "Color", "resources": "Resources", "key": "Key",

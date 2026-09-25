@@ -110,9 +110,9 @@ func TestDatabaseListUsesReadableTypeAndMemory(t *testing.T) {
 
 func TestAppInfoOmitsInactiveFeaturesAndFormatsMemoryAndSubdomain(t *testing.T) {
 	var out bytes.Buffer
-	Render(&out, map[string]any{"name": "next-build", "ram": float64(612), "subdomain": nil, "custom_domain": nil, "shield_cooldown": nil, "auto_restart": true}, "app info", "pt")
+	Render(&out, map[string]any{"name": "next-build", "ram": float64(612), "subdomain": nil, "custom_domain": nil, "shield_cooldown": nil}, "app info", "pt")
 	got := out.String()
-	for _, want := range []string{"612 MB", "Não configurado", "Ativado", "Domínio personalizado"} {
+	for _, want := range []string{"612 MB", "Não configurado", "Domínio personalizado"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}

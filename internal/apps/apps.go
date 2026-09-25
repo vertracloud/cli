@@ -657,8 +657,7 @@ func config(ctx context.Context, client *vertracloud.Client, args []string) (any
 	main := f.String("main", "", "main file")
 	version := f.String("version", "", "runtime version")
 	start := f.String("start", "", "start command")
-	autorestart := f.String("autorestart", "", "true or false")
-	pos, err := parse(f, args, map[string]bool{"--name": true, "--ram": true, "--main": true, "--version": true, "--start": true, "--autorestart": true}, nil)
+	pos, err := parse(f, args, map[string]bool{"--name": true, "--ram": true, "--main": true, "--version": true, "--start": true}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -689,14 +688,7 @@ func config(ctx context.Context, client *vertracloud.Client, args []string) (any
 	if *start != "" {
 		body.StartCommand = vertracloud.NullableValue(*start)
 	}
-	if *autorestart != "" {
-		v, e := strconv.ParseBool(*autorestart)
-		if e != nil {
-			return nil, errors.New("--autorestart must be true or false")
-		}
-		body.AutoRestart = &v
-	}
-	if body.Name == nil && body.RAM == nil && body.MainFile == nil && body.Version == nil && body.StartCommand == nil && body.AutoRestart == nil {
+	if body.Name == nil && body.RAM == nil && body.MainFile == nil && body.Version == nil && body.StartCommand == nil {
 		return nil, errors.New("app config requires at least one option")
 	}
 	return client.Apps.UpdateConfig(ctx, id, body)
@@ -712,9 +704,8 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	description := f.String("description", "", "description")
 	subdomain := f.String("subdomain", "", "subdomain")
 	start := f.String("start", "", "start command")
-	autorestart := f.String("autorestart", "", "true or false")
 	workspace := f.String("workspace", "", "workspace id")
-	pos, err := parse(f, args, map[string]bool{"--file": true, "--name": true, "--memory": true, "--main": true, "--version": true, "--description": true, "--subdomain": true, "--start": true, "--autorestart": true, "--workspace": true}, nil)
+	pos, err := parse(f, args, map[string]bool{"--file": true, "--name": true, "--memory": true, "--main": true, "--version": true, "--description": true, "--subdomain": true, "--start": true, "--workspace": true}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -783,14 +774,6 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	if *version == "" {
 		*version = "recommended"
 	}
-	var autoRestart *bool
-	if *autorestart != "" {
-		v, e := strconv.ParseBool(*autorestart)
-		if e != nil {
-			return nil, errors.New("--autorestart must be true or false")
-		}
-		autoRestart = &v
-	}
 	stop := spin(jsonMode, "upload")
 	defer stop()
 	r, filename, err := sourceReader(*file)
@@ -802,7 +785,7 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	if *description != "" {
 		descriptionValue = vertracloud.NullableValue(*description)
 	}
-	app, err := client.Apps.Create(ctx, vertracloud.ApplicationCreateParams{File: r, FileName: filename, Name: *name, Memory: *memory, Main: *main, Version: vertracloud.ApplicationVersion(*version), Description: descriptionValue, Subdomain: *subdomain, Start: *start, AutoRestart: autoRestart, WorkspaceID: *workspace})
+	app, err := client.Apps.Create(ctx, vertracloud.ApplicationCreateParams{File: r, FileName: filename, Name: *name, Memory: *memory, Main: *main, Version: vertracloud.ApplicationVersion(*version), Description: descriptionValue, Subdomain: *subdomain, Start: *start, WorkspaceID: *workspace})
 	stop()
 	if err != nil {
 		return nil, err
