@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.1](https://github.com/vertracloud/cli/compare/v0.1.0...v0.1.1) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove --autorestart flag and auto_restart display
+
+* release 0.1.1 ([deef81b](https://github.com/vertracloud/cli/commit/deef81b3b290fdf272db54c31daa644b613d6fd4))
+
+
+### Features
+
+* remove --autorestart flag and auto_restart display ([94a312c](https://github.com/vertracloud/cli/commit/94a312cfdc7ae699dacc8a411d954b3f4384e428))
+
 ## 0.1.0 (2026-09-23)
 
 
