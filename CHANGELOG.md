@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/vertracloud/cli/compare/v0.1.1...v0.1.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* **deps:** bump sdk-api-go to v0.1.3 ([551e1a6](https://github.com/vertracloud/cli/commit/551e1a6abf58bb874f09f871fc99e2db9dd6d9ba))
+
 ## [0.1.1](https://github.com/vertracloud/cli/compare/v0.1.0...v0.1.1) (2026-09-30)
 
 
