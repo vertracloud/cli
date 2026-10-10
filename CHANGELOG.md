@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.3](https://github.com/vertracloud/cli/compare/v0.1.2...v0.1.3) (2026-10-10)
+
+
+* release 0.1.3 ([d0d5863](https://github.com/vertracloud/cli/commit/d0d5863903e7096cf2382d6f421f3c8d1fd8e74f))
+
+
+### Features
+
+* **app:** add --path destination folder to app commit ([c235b3d](https://github.com/vertracloud/cli/commit/c235b3d81f72bf8f4dced21506a51299e735b175))
+
 ## [0.1.2](https://github.com/vertracloud/cli/compare/v0.1.1...v0.1.2) (2026-10-05)
 
 
