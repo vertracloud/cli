@@ -802,7 +802,8 @@ func commit(ctx context.Context, client *vertracloud.Client, args []string, json
 	f := fs("app commit")
 	file := f.String("file", "", "zip file")
 	restart := f.Bool("restart", false, "restart after upload")
-	pos, err := parse(f, args, map[string]bool{"--file": true}, map[string]bool{"--restart": true, "-r": true})
+	dest := f.String("path", "", "destination folder inside the application (default: root)")
+	pos, err := parse(f, args, map[string]bool{"--file": true, "--path": true}, map[string]bool{"--restart": true, "-r": true})
 	if err != nil {
 		return nil, err
 	}
@@ -820,7 +821,7 @@ func commit(ctx context.Context, client *vertracloud.Client, args []string, json
 		return nil, err
 	}
 	defer r.Close()
-	response, err := client.Apps.Files().Upload(ctx, id, vertracloud.ApplicationFileUploadParams{File: r, FileName: filename, Restart: restart})
+	response, err := client.Apps.Files().Upload(ctx, id, vertracloud.ApplicationFileUploadParams{File: r, FileName: filename, Restart: restart, Path: *dest})
 	if err != nil {
 		return nil, err
 	}

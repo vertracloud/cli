@@ -512,7 +512,7 @@ var groupHelp = map[string][]helpEntry{
 		{"start|stop [<id>]", [3]string{"Liga ou desliga a aplicação", "Start or stop the application", "Enciende o apaga la aplicación"}},
 		{"restart [<id>] [--reinstall] [--force-build]", [3]string{"Reinicia a aplicação", "Restart the application", "Reinicia la aplicación"}},
 		{"upload [--name --memory --main]", [3]string{"Cria uma aplicação a partir desta pasta", "Create an application from this directory", "Crea una aplicación desde esta carpeta"}},
-		{"commit [<id>] [--restart]", [3]string{"Envia os arquivos desta pasta (alias: push, deploy)", "Upload this directory (aliases: push, deploy)", "Sube esta carpeta (alias: push, deploy)"}},
+		{"commit [<id>] [--restart] [--path <folder>]", [3]string{"Envia os arquivos desta pasta (alias: push, deploy)", "Upload this directory (aliases: push, deploy)", "Sube esta carpeta (alias: push, deploy)"}},
 		{"config [<id>] [--ram --main --start ...]", [3]string{"Altera a configuração", "Change the configuration", "Cambia la configuración"}},
 		{"download [<id>] [-o <file>]", [3]string{"Baixa o código como .zip", "Download the code as .zip", "Descarga el código como .zip"}},
 		{"env list|set|remove", [3]string{"Variáveis de ambiente", "Environment variables", "Variables de entorno"}},

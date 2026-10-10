@@ -368,6 +368,7 @@ type fakeFiles struct {
 	uploadResponse vertracloud.ApplicationFileUploadResponse
 	uploadID       string
 	uploadRestart  *bool
+	uploadPath     string
 	readContent    vertracloud.ApplicationFileContent
 }
 
@@ -392,6 +393,7 @@ func (fakeFiles) Delete(context.Context, string, vertracloud.ApplicationFileDele
 func (f *fakeFiles) Upload(_ context.Context, id string, params vertracloud.ApplicationFileUploadParams, _ ...rest.RequestOpt) (vertracloud.ApplicationFileUploadResponse, error) {
 	f.uploadID = id
 	f.uploadRestart = params.Restart
+	f.uploadPath = params.Path
 	return f.uploadResponse, nil
 }
 
@@ -405,7 +407,7 @@ func TestCommitReturnsUploadResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Run(context.Background(), client, "commit", []string{"app-1", "--file", zipPath, "--restart"})
+	got, err := Run(context.Background(), client, "commit", []string{"app-1", "--file", zipPath, "--restart", "--path", "src/lib"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,6 +417,9 @@ func TestCommitReturnsUploadResponse(t *testing.T) {
 	}
 	if apps.files.uploadID != "app-1" || apps.files.uploadRestart == nil || !*apps.files.uploadRestart {
 		t.Fatalf("upload id=%q restart=%v", apps.files.uploadID, apps.files.uploadRestart)
+	}
+	if apps.files.uploadPath != "src/lib" {
+		t.Fatalf("upload path=%q, want src/lib", apps.files.uploadPath)
 	}
 }
 
