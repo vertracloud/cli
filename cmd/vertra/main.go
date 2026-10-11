@@ -328,6 +328,10 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	default:
 		err = fmt.Errorf("unknown command %q", args[0])
 	}
+	if errors.Is(err, apps.ErrCancelled) {
+		fmt.Fprintln(out, cancelled(locale))
+		return 0
+	}
 	if err != nil {
 		return fail(errOut, jsonMode, "COMMAND_FAILED", err)
 	}
@@ -480,7 +484,7 @@ var topHelp = []helpSection{
 	}},
 	{[3]string{"Recursos", "Resources", "Recursos"}, []helpEntry{
 		{"projects", [3]string{"Lista apps e bancos juntos, com estado", "List apps and databases together, with status", "Lista apps y bases de datos juntas, con estado"}},
-		{"app", [3]string{"Aplicações: deploy, estado, logs, variáveis, arquivos e rede", "Applications: deploy, status, logs, env, files and network", "Aplicaciones: deploy, estado, logs, variables, archivos y red"}},
+		{"app", [3]string{"Aplicações: deploy, versões e rollback, estado, logs, variáveis, arquivos e rede", "Applications: deploy, releases and rollback, status, logs, env, files and network", "Aplicaciones: deploy, versiones y rollback, estado, logs, variables, archivos y red"}},
 		{"db", [3]string{"Bancos de dados: criar, estado, credenciais", "Databases: create, status, credentials", "Bases de datos: crear, estado, credenciales"}},
 		{"workspace", [3]string{"Workspaces, membros, convites e funções", "Workspaces, members, invites and roles", "Espacios de trabajo, miembros, invitaciones y roles"}},
 		{"snapshot", [3]string{"Cria, baixa e restaura snapshots", "Create, download and restore snapshots", "Crea, descarga y restaura snapshots"}},
@@ -513,7 +517,10 @@ var groupHelp = map[string][]helpEntry{
 		{"restart [<id>] [--reinstall] [--force-build]", [3]string{"Reinicia a aplicação", "Restart the application", "Reinicia la aplicación"}},
 		{"upload [--name --memory --main]", [3]string{"Cria uma aplicação a partir desta pasta", "Create an application from this directory", "Crea una aplicación desde esta carpeta"}},
 		{"commit [<id>] [--restart] [--path <folder>] [-m <message>]", [3]string{"Envia os arquivos desta pasta (alias: push, deploy). -m define a mensagem do commit; sem ela, usa o assunto do último commit git", "Upload this directory (aliases: push, deploy). -m sets the commit message; by default, the subject of the last git commit", "Sube esta carpeta (alias: push, deploy). -m define el mensaje del commit; por defecto, el asunto del último commit de git"}},
-		{"config [<id>] [--ram --main --start ...]", [3]string{"Altera a configuração", "Change the configuration", "Cambia la configuración"}},
+		{"config [<id>] [--ram --main --start ...] [--zero-downtime auto|on|off] [--auto-rollback on|off] [--health-path <path>|--clear-health-path]", [3]string{"Altera a configuração e o comportamento do deploy: zero downtime (on: Enterprise), rollback automático (a partir do Intermediary) e caminho de health check", "Change the configuration and deploy behavior: zero downtime (on: Enterprise), automatic rollback (Intermediary and up) and health check path", "Cambia la configuración y el comportamiento del deploy: zero downtime (on: Enterprise), rollback automático (desde Intermediary) y ruta de health check"}},
+		{"releases [<id>] [--page N] [--limit N]", [3]string{"Lista as versões do código, da mais nova à mais antiga, e se dá para voltar a cada uma", "List code versions, newest first, and whether each can be restored", "Lista las versiones del código, de la más nueva a la más antigua, y si se puede volver a cada una"}},
+		{"releases log [<id>] <release-id>", [3]string{"Mostra o log do deploy que falhou", "Show the log of a failed deploy", "Muestra el log del deploy que falló"}},
+		{"rollback [<id>] <release-id> [--env] [--yes]", [3]string{"Volta o código para uma versão anterior e reinicia (a partir do Pro). --env também volta as variáveis (precisa do escopo apps:envs)", "Roll the code back to a previous version and restart (Pro and up). --env also restores the variables (needs the apps:envs scope)", "Vuelve el código a una versión anterior y reinicia (desde Pro). --env también vuelve las variables (necesita el alcance apps:envs)"}},
 		{"download [<id>] [-o <file>]", [3]string{"Baixa o código como .zip", "Download the code as .zip", "Descarga el código como .zip"}},
 		{"env list|set|remove", [3]string{"Variáveis de ambiente", "Environment variables", "Variables de entorno"}},
 		{"file list|read|write|move|delete", [3]string{"Arquivos da aplicação", "Application files", "Archivos de la aplicación"}},

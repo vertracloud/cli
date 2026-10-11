@@ -57,7 +57,7 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 | Command | What it does |
 |---|---|
 | `vertra auth login\|whoami\|logout` | Connect and inspect your account. |
-| `vertra app ...` | List, inspect, start, stop, restart, deploy, configure and delete applications; logs, metrics, environment variables, files and domains. |
+| `vertra app ...` | List, inspect, start, stop, restart, deploy, configure and delete applications; releases and rollback; logs, metrics, environment variables, files and domains. |
 | `vertra db ...` | Create and manage databases, credentials and certificates. |
 | `vertra projects` | Applications and databases in one table, with live status. |
 | `vertra snapshot ...` | List, create, download and restore snapshots. |
@@ -69,6 +69,26 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 | `vertra status` | Platform status. |
 
 `vertra app commit [<id>] [-m <message>]` sends a commit message with the upload, shown in the deploy history (up to 500 characters). Without `-m`, the CLI uses the subject of the last git commit in the folder, if there is one; otherwise the upload has no message.
+
+### Releases and rollback
+
+```bash
+vertra app releases [<id>] [--page N] [--limit N]   # versions, newest first, and which ones can be restored
+vertra app releases log [<id>] <release-id>         # log of a deploy that failed
+vertra app rollback [<id>] <release-id> [--env]     # go back to that version and restart
+```
+
+`rollback` is available from the Pro plan. It shows what will happen and asks before it runs; pass `--yes` in automation. With `--env` it also restores the environment variables saved with that version: it lists only their names and whether each one would be added, modified or removed, never the values, and needs an API key with the `apps:envs` scope. Without `--env` your current variables stay as they are.
+
+### Deploy behavior
+
+```bash
+vertra app config [<id>] --zero-downtime auto|on|off   # on: Enterprise plan
+vertra app config [<id>] --auto-rollback on|off        # Intermediary plan and up
+vertra app config [<id>] --health-path /healthz        # or --clear-health-path
+```
+
+The health path must start with `/`, use visible characters without spaces and have at most 200 characters. `vertra app info` shows the current values.
 
 Run `vertra --help` or `vertra <command> --help` for every flag. When an ID is omitted, the CLI uses the linked application or lets you pick one. Destructive commands ask for confirmation; pass `--yes` in automation.
 

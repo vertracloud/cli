@@ -219,6 +219,7 @@ var listColumns = map[string][]string{
 	"favorite list":  {"resource_type", "resource_id", "created_at"},
 	"app env list":   {"key", "value", "note"},
 	"app file list":  {"name", "type", "last_modified"},
+	"app releases":   {"id", "source", "release_status", "author", "message", "created_at", "rollback", "expires_at"},
 }
 
 // hidden fields are internal bookkeeping that only add noise for humans.
@@ -461,6 +462,15 @@ func cell(item map[string]any, key, kind, locale string) (string, func(string) s
 				}
 				return strings.TrimSuffix(used, " MB") + fmt.Sprintf(" / %.0f MB", limit), memoryColor(used, limit)
 			}
+		}
+	case "deploy":
+		if m, ok := value.(map[string]any); ok && m["zero_downtime"] != nil {
+			zero := fmt.Sprint(m["zero_downtime"])
+			if m["zero_downtime_active"] == true {
+				zero += " ✓"
+			}
+			return fmt.Sprintf("%s: %s · %s: %s · %s: %s", text(locale, "zero_downtime"), zero,
+				text(locale, "auto_rollback"), plain(m["auto_rollback"], locale), text(locale, "health_check_path"), plain(m["health_check_path"], locale)), nil
 		}
 	case "shield_cooldown":
 		if !shieldActive(item) {
@@ -794,7 +804,7 @@ func mutation(cmd string) bool {
 	parts := strings.Fields(cmd)
 	switch parts[len(parts)-1] {
 	case "create", "update", "delete", "add", "start", "stop", "restart", "set", "write", "move", "publish",
-		"unpublish", "purge-cache", "domain", "subdomain", "reset", "restore", "upload", "commit", "config", "revoke", "accept":
+		"unpublish", "purge-cache", "domain", "subdomain", "reset", "restore", "upload", "commit", "config", "revoke", "accept", "rollback":
 		return true
 	}
 	return false
@@ -808,6 +818,7 @@ var actionMessages = map[string][3]string{ // pt, en, es
 	"app upload":       {"Aplicação enviada.", "Application uploaded.", "Aplicación subida."},
 	"app commit":       {"Arquivos enviados.", "Files uploaded.", "Archivos subidos."},
 	"app config":       {"Configuração atualizada.", "Configuration updated.", "Configuración actualizada."},
+	"app rollback":     {"Rollback iniciado. A aplicação está reiniciando.", "Rollback started. The application is restarting.", "Rollback iniciado. La aplicación se está reiniciando."},
 	"app download":     {"Download concluído.", "Download complete.", "Descarga completada."},
 	"app env set":      {"Variáveis salvas.", "Variables saved.", "Variables guardadas."},
 	"app env delete":   {"Variáveis removidas.", "Variables removed.", "Variables eliminadas."},
@@ -908,6 +919,22 @@ var translations = map[string]map[string]string{
 		"signed_in":                    "Login realizado como %s.", "not_linked": "Esta pasta não está vinculada a nenhuma aplicação.",
 		"doctor_summary": "%v ok · %v avisos · %v erros", "picker_hint": "↑/↓ navegar · enter selecionar · q sair",
 		"pagination_next": "enter/n próxima · p anterior · q sair",
+		"author":          "Autor", "release_status": "Estado", "rollback": "Voltar", "expires_at": "Expira em", "deploy": "Deploy",
+		"zero_downtime": "Zero downtime", "auto_rollback": "Rollback automático", "health_check_path": "Health check",
+		"release_no_log":    "Esta versão não tem log (não houve falha ou o log expirou).",
+		"releases_more":     "Página %d de %d. Veja a próxima com: --page %d",
+		"rollback_summary":  "O código volta para a versão %s e a aplicação reinicia. Os dados que o app criou não são apagados.",
+		"rollback_env_kept": "As variáveis de ambiente continuam como estão.", "rollback_env_none": "Nenhuma variável de ambiente muda.",
+		"rollback_env_changes": "Variáveis de ambiente que mudam (só os nomes):", "rollback_confirm": "Voltar para esta versão?",
+		"env_added": "adicionada", "env_modified": "alterada", "env_removed": "removida",
+		"err_rollback_plan":         "Voltar para uma versão anterior está disponível a partir do plano Pro.",
+		"err_release_expired":       "O código desta versão não é mais guardado. Escolha uma versão mais recente.",
+		"err_release_active":        "Esta já é a versão em execução.",
+		"err_restore_cooldown":      "Uma restauração recente deixou esta aplicação em espera. Tente de novo mais tarde.",
+		"err_operation_in_progress": "A aplicação está em outra operação. Aguarde terminar e tente de novo.",
+		"err_scope_envs":            "Sua chave precisa do escopo apps:envs para voltar as variáveis de ambiente.",
+		"err_zero_downtime_plan":    "Zero downtime sempre ligado está disponível no plano Enterprise.",
+		"err_auto_rollback_plan":    "O rollback automático está disponível a partir do plano Intermediary.",
 	},
 	"es": {
 		"empty": "No hay resultados.", "status": "Estado", "id": "ID", "name": "Nombre", "created_at": "Creado", "updated_at": "Actualizado",
@@ -939,6 +966,22 @@ var translations = map[string]map[string]string{
 		"signed_in":                    "Sesión iniciada como %s.", "not_linked": "Esta carpeta no está vinculada a ninguna aplicación.",
 		"doctor_summary": "%v ok · %v avisos · %v errores", "picker_hint": "↑/↓ navegar · enter seleccionar · q salir",
 		"pagination_next": "enter/n siguiente · p anterior · q salir",
+		"author":          "Autor", "source": "Origen", "release_status": "Estado", "rollback": "Volver", "expires_at": "Expira el", "deploy": "Deploy",
+		"zero_downtime": "Zero downtime", "auto_rollback": "Rollback automático", "health_check_path": "Health check",
+		"release_no_log":    "Esta versión no tiene log (no hubo fallo o el log expiró).",
+		"releases_more":     "Página %d de %d. Mira la siguiente con: --page %d",
+		"rollback_summary":  "El código vuelve a la versión %s y la aplicación se reinicia. Los datos que creó la app no se borran.",
+		"rollback_env_kept": "Las variables de entorno se quedan como están.", "rollback_env_none": "Ninguna variable de entorno cambia.",
+		"rollback_env_changes": "Variables de entorno que cambian (solo los nombres):", "rollback_confirm": "¿Volver a esta versión?",
+		"env_added": "añadida", "env_modified": "modificada", "env_removed": "eliminada",
+		"err_rollback_plan":         "Volver a una versión anterior está disponible desde el plan Pro.",
+		"err_release_expired":       "El código de esta versión ya no se conserva. Elige una versión más reciente.",
+		"err_release_active":        "Esta ya es la versión en ejecución.",
+		"err_restore_cooldown":      "Una restauración reciente dejó esta aplicación en espera. Inténtalo de nuevo más tarde.",
+		"err_operation_in_progress": "La aplicación está en otra operación. Espera a que termine e inténtalo de nuevo.",
+		"err_scope_envs":            "Tu clave necesita el alcance apps:envs para volver las variables de entorno.",
+		"err_zero_downtime_plan":    "Zero downtime siempre activo está disponible en el plan Enterprise.",
+		"err_auto_rollback_plan":    "El rollback automático está disponible desde el plan Intermediary.",
 	},
 	"en": {
 		"empty": "No results.", "status": "Status", "id": "ID", "name": "Name", "created_at": "Created", "updated_at": "Updated",
@@ -970,6 +1013,22 @@ var translations = map[string]map[string]string{
 		"signed_in":                    "Signed in as %s.", "not_linked": "This directory is not linked to an application.",
 		"doctor_summary": "%v passed · %v warnings · %v errors", "picker_hint": "↑/↓ move · enter select · q quit",
 		"pagination_next": "enter/n next · p previous · q quit",
+		"author":          "Author", "source": "Origin", "release_status": "Status", "rollback": "Rollback", "expires_at": "Expires", "deploy": "Deploy",
+		"zero_downtime": "Zero downtime", "auto_rollback": "Auto rollback", "health_check_path": "Health check",
+		"release_no_log":    "This release has no log (it did not fail, or the log expired).",
+		"releases_more":     "Page %d of %d. See the next with: --page %d",
+		"rollback_summary":  "The code goes back to version %s and the application restarts. Data the app created is not deleted.",
+		"rollback_env_kept": "Environment variables stay as they are.", "rollback_env_none": "No environment variable changes.",
+		"rollback_env_changes": "Environment variables that change (names only):", "rollback_confirm": "Go back to this version?",
+		"env_added": "added", "env_modified": "modified", "env_removed": "removed",
+		"err_rollback_plan":         "Rolling back to a previous version is available from the Pro plan.",
+		"err_release_expired":       "The code of this version is no longer kept. Pick a more recent version.",
+		"err_release_active":        "This is already the running version.",
+		"err_restore_cooldown":      "A recent restore put this application on hold. Try again later.",
+		"err_operation_in_progress": "The application is busy with another operation. Wait for it to finish and try again.",
+		"err_scope_envs":            "Your key needs the apps:envs scope to restore environment variables.",
+		"err_zero_downtime_plan":    "Always-on zero downtime is available on the Enterprise plan.",
+		"err_auto_rollback_plan":    "Automatic rollback is available from the Intermediary plan.",
 	},
 }
 

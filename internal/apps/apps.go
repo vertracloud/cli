@@ -55,6 +55,10 @@ func RunWithOptions(ctx context.Context, client *vertracloud.Client, command str
 		return download(ctx, client, args)
 	case "config":
 		return config(ctx, client, args)
+	case "releases":
+		return releases(ctx, client, args)
+	case "rollback":
+		return rollback(ctx, client, args, jsonMode)
 	case "upload", "create":
 		return upload(ctx, client, args, jsonMode)
 	case "commit", "push", "deploy":
@@ -658,7 +662,17 @@ func config(ctx context.Context, client *vertracloud.Client, args []string) (any
 	main := f.String("main", "", "main file")
 	version := f.String("version", "", "runtime version")
 	start := f.String("start", "", "start command")
-	pos, err := parse(f, args, map[string]bool{"--name": true, "--ram": true, "--main": true, "--version": true, "--start": true}, nil)
+	zeroDowntime := f.String("zero-downtime", "", "auto, on or off")
+	autoRollback := f.String("auto-rollback", "", "on or off")
+	healthPath := f.String("health-path", "", "health check path")
+	clearHealth := f.Bool("clear-health-path", false, "remove the health check path")
+	pos, err := parse(f, args, map[string]bool{"--name": true, "--ram": true, "--main": true, "--version": true, "--start": true, "--zero-downtime": true, "--auto-rollback": true, "--health-path": true}, map[string]bool{"--clear-health-path": true})
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]bool{}
+	f.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+	deploy, err := deployUpdate(set, *zeroDowntime, *autoRollback, *healthPath, *clearHealth)
 	if err != nil {
 		return nil, err
 	}
@@ -689,10 +703,12 @@ func config(ctx context.Context, client *vertracloud.Client, args []string) (any
 	if *start != "" {
 		body.StartCommand = vertracloud.NullableValue(*start)
 	}
-	if body.Name == nil && body.RAM == nil && body.MainFile == nil && body.Version == nil && body.StartCommand == nil {
+	body.Deploy = deploy
+	if body.Name == nil && body.RAM == nil && body.MainFile == nil && body.Version == nil && body.StartCommand == nil && body.Deploy == nil {
 		return nil, errors.New("app config requires at least one option")
 	}
-	return client.Apps.UpdateConfig(ctx, id, body)
+	msg, err := client.Apps.UpdateConfig(ctx, id, body)
+	return msg, friendly(err, false)
 }
 
 func upload(ctx context.Context, client *vertracloud.Client, args []string, jsonMode bool) (any, error) {

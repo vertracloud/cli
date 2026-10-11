@@ -245,6 +245,9 @@ type fakeApps struct {
 	createCalls int
 	stream      *vertracloud.ApplicationRealtimeEventStream
 	files       fakeFiles
+	releases    fakeReleases
+	configBody  *vertracloud.ApplicationUpdateConfigBody
+	configErr   error
 }
 
 type fakeAccount struct {
@@ -296,8 +299,9 @@ func (f *fakeApps) Stop(context.Context, string, ...rest.RequestOpt) (vertraclou
 func (f *fakeApps) Restart(context.Context, string, *vertracloud.ApplicationRestartBody, ...rest.RequestOpt) (vertracloud.ApplicationOperationResponse, error) {
 	return vertracloud.ApplicationOperationResponse{}, nil
 }
-func (f *fakeApps) UpdateConfig(context.Context, string, vertracloud.ApplicationUpdateConfigBody, ...rest.RequestOpt) (string, error) {
-	return "", nil
+func (f *fakeApps) UpdateConfig(_ context.Context, _ string, body vertracloud.ApplicationUpdateConfigBody, _ ...rest.RequestOpt) (string, error) {
+	f.configBody = &body
+	return "", f.configErr
 }
 func (f *fakeApps) Delete(_ context.Context, id string, _ ...rest.RequestOpt) error {
 	f.deleted = id
@@ -306,7 +310,7 @@ func (f *fakeApps) Delete(_ context.Context, id string, _ ...rest.RequestOpt) er
 func (f *fakeApps) Deploys() vertracloud.AppsDeploysService   { return fakeDeploys{} }
 func (f *fakeApps) Network() vertracloud.AppsNetworkService   { return fakeNetwork{} }
 func (f *fakeApps) Envs() vertracloud.AppsEnvsService         { return fakeEnvs{} }
-func (f *fakeApps) Releases() vertracloud.AppsReleasesService { return nil }
+func (f *fakeApps) Releases() vertracloud.AppsReleasesService { return &f.releases }
 func (f *fakeApps) Files() vertracloud.AppsFilesService       { return &f.files }
 
 type fakeDeploys struct{}
