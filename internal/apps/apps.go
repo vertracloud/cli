@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -803,7 +804,9 @@ func commit(ctx context.Context, client *vertracloud.Client, args []string, json
 	file := f.String("file", "", "zip file")
 	restart := f.Bool("restart", false, "restart after upload")
 	dest := f.String("path", "", "destination folder inside the application (default: root)")
-	pos, err := parse(f, args, map[string]bool{"--file": true, "--path": true}, map[string]bool{"--restart": true, "-r": true})
+	message := f.String("message", "", "commit message (default: subject of the last git commit)")
+	f.StringVar(message, "m", "", "alias for --message")
+	pos, err := parse(f, args, map[string]bool{"--file": true, "--path": true, "--message": true, "-m": true}, map[string]bool{"--restart": true, "-r": true})
 	if err != nil {
 		return nil, err
 	}
@@ -814,6 +817,14 @@ func commit(ctx context.Context, client *vertracloud.Client, args []string, json
 	if len(rest) != 0 {
 		return nil, fmt.Errorf("unexpected arguments: %s", strings.Join(rest, " "))
 	}
+	var msg string
+	given := false
+	f.Visit(func(fl *flag.Flag) { given = given || fl.Name == "message" || fl.Name == "m" })
+	if given {
+		msg = normalizeMessage(*message)
+	} else {
+		msg = normalizeMessage(gitSubject(ctx, commitDir(*file)))
+	}
 	stop := spin(jsonMode, "commit")
 	defer stop()
 	r, filename, err := sourceReader(*file)
@@ -821,7 +832,7 @@ func commit(ctx context.Context, client *vertracloud.Client, args []string, json
 		return nil, err
 	}
 	defer r.Close()
-	response, err := client.Apps.Files().Upload(ctx, id, vertracloud.ApplicationFileUploadParams{File: r, FileName: filename, Restart: restart, Path: *dest})
+	response, err := client.Apps.Files().Upload(ctx, id, vertracloud.ApplicationFileUploadParams{File: r, FileName: filename, Restart: restart, Path: *dest, Message: msg})
 	if err != nil {
 		return nil, err
 	}
@@ -1186,6 +1197,44 @@ func optionalString(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// commitDir is where git is asked for the last commit: the --file folder when
+// one is given, otherwise the current directory (the one sourceReader zips).
+func commitDir(file string) string {
+	if file != "" {
+		if st, err := os.Stat(file); err == nil && st.IsDir() {
+			return file
+		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return cwd
+}
+
+// gitSubject returns the subject of the last commit of the repository that
+// contains dir. Any failure (no git, not a repo, no commits) yields "".
+func gitSubject(ctx context.Context, dir string) string {
+	if dir == "" {
+		return ""
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "log", "-1", "--format=%s").Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// normalizeMessage trims a commit message and keeps at most 500 characters,
+// the limit the API accepts.
+func normalizeMessage(s string) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > 500 {
+		return string(r[:500])
+	}
+	return s
 }
 
 func sourceReader(file string) (io.ReadCloser, string, error) {

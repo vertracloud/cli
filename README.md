@@ -68,6 +68,8 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 | `vertra lang <pt\|en\|es>` | Change the CLI language. |
 | `vertra status` | Platform status. |
 
+`vertra app commit [<id>] [-m <message>]` sends a commit message with the upload, shown in the deploy history (up to 500 characters). Without `-m`, the CLI uses the subject of the last git commit in the folder, if there is one; otherwise the upload has no message.
+
 Run `vertra --help` or `vertra <command> --help` for every flag. When an ID is omitted, the CLI uses the linked application or lets you pick one. Destructive commands ask for confirmation; pass `--yes` in automation.
 
 ## Scripting

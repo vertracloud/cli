@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vertracloud/sdk-api-go/rest"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
@@ -301,10 +303,11 @@ func (f *fakeApps) Delete(_ context.Context, id string, _ ...rest.RequestOpt) er
 	f.deleted = id
 	return nil
 }
-func (f *fakeApps) Deploys() vertracloud.AppsDeploysService { return fakeDeploys{} }
-func (f *fakeApps) Network() vertracloud.AppsNetworkService { return fakeNetwork{} }
-func (f *fakeApps) Envs() vertracloud.AppsEnvsService       { return fakeEnvs{} }
-func (f *fakeApps) Files() vertracloud.AppsFilesService     { return &f.files }
+func (f *fakeApps) Deploys() vertracloud.AppsDeploysService   { return fakeDeploys{} }
+func (f *fakeApps) Network() vertracloud.AppsNetworkService   { return fakeNetwork{} }
+func (f *fakeApps) Envs() vertracloud.AppsEnvsService         { return fakeEnvs{} }
+func (f *fakeApps) Releases() vertracloud.AppsReleasesService { return nil }
+func (f *fakeApps) Files() vertracloud.AppsFilesService       { return &f.files }
 
 type fakeDeploys struct{}
 
@@ -369,6 +372,7 @@ type fakeFiles struct {
 	uploadID       string
 	uploadRestart  *bool
 	uploadPath     string
+	uploadMessage  string
 	readContent    vertracloud.ApplicationFileContent
 }
 
@@ -394,6 +398,7 @@ func (f *fakeFiles) Upload(_ context.Context, id string, params vertracloud.Appl
 	f.uploadID = id
 	f.uploadRestart = params.Restart
 	f.uploadPath = params.Path
+	f.uploadMessage = params.Message
 	return f.uploadResponse, nil
 }
 
@@ -420,6 +425,109 @@ func TestCommitReturnsUploadResponse(t *testing.T) {
 	}
 	if apps.files.uploadPath != "src/lib" {
 		t.Fatalf("upload path=%q, want src/lib", apps.files.uploadPath)
+	}
+}
+
+// initGitRepo creates a git repository in a temp dir with one commit whose
+// subject is subject (no commit when subject is empty).
+func initGitRepo(t *testing.T, subject string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"}, args...)...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	if subject != "" {
+		git("commit", "-q", "--allow-empty", "-m", subject)
+	}
+	return dir
+}
+
+func chdirTo(t *testing.T, dir string) {
+	t.Helper()
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+}
+
+// commitMessage runs `app commit app-1 <args>` against a fake and returns the message sent.
+func commitMessage(t *testing.T, args ...string) string {
+	t.Helper()
+	apps := &fakeApps{}
+	if _, err := Run(context.Background(), &vertracloud.Client{Apps: apps}, "commit", append([]string{"app-1"}, args...)); err != nil {
+		t.Fatal(err)
+	}
+	return apps.files.uploadMessage
+}
+
+func writeZip(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(p, []byte("zip"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestCommitMessageFlagWinsOverGit(t *testing.T) {
+	chdirTo(t, initGitRepo(t, "assunto do git"))
+	zip := writeZip(t)
+	if got := commitMessage(t, "--file", zip, "-m", "  explicita  "); got != "explicita" {
+		t.Fatalf("-m sent %q", got)
+	}
+	if got := commitMessage(t, "--file", zip, "--message=longa"); got != "longa" {
+		t.Fatalf("--message sent %q", got)
+	}
+}
+
+func TestCommitMessageFallsBackToLastGitSubject(t *testing.T) {
+	repo := initGitRepo(t, "assunto do git")
+	chdirTo(t, repo)
+	if got := commitMessage(t, "--file", writeZip(t)); got != "assunto do git" {
+		t.Fatalf("fallback sent %q", got)
+	}
+	// --file pointing at a folder: the folder's repository is used, not the cwd's.
+	chdirTo(t, t.TempDir())
+	if got := commitMessage(t, "--file", repo); got != "assunto do git" {
+		t.Fatalf("folder --file sent %q", got)
+	}
+}
+
+func TestCommitMessageEmptyFlagSendsNothing(t *testing.T) {
+	chdirTo(t, initGitRepo(t, "assunto do git"))
+	if got := commitMessage(t, "--file", writeZip(t), "-m", ""); got != "" {
+		t.Fatalf("empty -m sent %q", got)
+	}
+}
+
+func TestCommitMessageOutsideRepoIsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	// Stop git from finding a repository above the temp dir.
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	chdirTo(t, dir)
+	if got := commitMessage(t, "--file", writeZip(t)); got != "" {
+		t.Fatalf("outside a repo sent %q", got)
+	}
+}
+
+func TestCommitMessageIsCutAt500Runes(t *testing.T) {
+	chdirTo(t, t.TempDir())
+	got := commitMessage(t, "--file", writeZip(t), "-m", strings.Repeat("ç", 600))
+	if n := utf8.RuneCountInString(got); n != 500 || !utf8.ValidString(got) {
+		t.Fatalf("got %d runes, valid=%v", n, utf8.ValidString(got))
 	}
 }
 
