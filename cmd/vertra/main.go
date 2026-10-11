@@ -741,10 +741,10 @@ func destructivePath(args []string, locale string) (bool, string) {
 
 func fail(out io.Writer, jsonMode bool, code string, err error) int {
 	var apiErr *rest.APIError
-	message := err.Error()
+	message := ui.Plain(err.Error()) // server text: never raw to the terminal
 	if errors.As(err, &apiErr) {
 		code = apiErr.Code
-		message = apiErr.Message + " " + ui.Dim("("+apiErr.Code+")")
+		message = ui.Plain(apiErr.Message) + " " + ui.Dim("("+ui.Plain(apiErr.Code)+")")
 		if apiErr.Code == "APP_SHIELD_COOLDOWN" {
 			message = ui.Text("shield_blocked")
 			if until := apiErr.Until(); until != nil {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/vertracloud/cli/internal/ui"
+	"github.com/vertracloud/sdk-api-go/rest"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
 )
 
@@ -203,5 +204,16 @@ func TestJsonDestructiveCommandFailsOnStderrBeforeNetwork(t *testing.T) {
 	}
 	if out.Len() != 0 || !strings.Contains(errOut.String(), `"code":"CONFIRMATION_REQUIRED"`) {
 		t.Fatalf("stdout=%q stderr=%q", out.String(), errOut.String())
+	}
+}
+
+func TestFailStripsEscapesFromServerMessage(t *testing.T) {
+	var out bytes.Buffer
+	err := &rest.APIError{Status: 400, Code: "BAD", Message: "nope\r\x1b[2J\x1b]52;c;QQ==\x07 [y/N]"}
+	if code := fail(&out, false, "COMMAND_FAILED", err); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if strings.ContainsAny(out.String(), "\r\x07") || strings.Contains(out.String(), "[2J") || strings.Contains(out.String(), "52;c") || !strings.Contains(out.String(), "nope [y/N]") {
+		t.Fatalf("got %q", out.String())
 	}
 }

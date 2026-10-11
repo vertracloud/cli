@@ -34,7 +34,11 @@ func RenderPaged(w io.Writer, value any, command, locale string, pageSize int, a
 		return
 	}
 	cmd := Normalize(command)
-	data = localized(data, locale, strings.HasPrefix(command, "db credentials reset password"))
+	if log, ok := data.(string); ok {
+		data = LogText(log) // a bare string is log or file content: multi-line, colors allowed
+	} else {
+		data = localized(data, locale, strings.HasPrefix(command, "db credentials reset password"))
+	}
 	kind := "app"
 	if strings.HasPrefix(cmd, "db") {
 		kind = "db"
@@ -853,12 +857,20 @@ func localized(value any, locale string, showResetPassword bool) any {
 			}
 			if strings.HasSuffix(key, "_at") || key == "offline_since" || key == "last_snapshot" || key == "date" || key == "last_modified" {
 				if raw, ok := item.(string); ok {
-					v[key] = formatDate(raw, locale)
+					v[key] = Plain(formatDate(raw, locale))
 					continue
 				}
 			}
 			v[key] = localized(item, locale, showResetPassword)
 		}
+		for key, item := range v { // keys come from the server too
+			if clean := Plain(key); clean != key {
+				delete(v, key)
+				v[clean] = item
+			}
+		}
+	case string:
+		return Plain(v)
 	case []any:
 		for i := range v {
 			v[i] = localized(v[i], locale, showResetPassword)

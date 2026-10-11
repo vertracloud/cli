@@ -119,6 +119,21 @@ func TestFollowWritesSDKEventsAsTheyArrive(t *testing.T) {
 	}
 }
 
+func TestFollowStripsEscapesButKeepsColor(t *testing.T) {
+	stream, err := rest.OpenEventStream(context.Background(), sseBody("data: \x1b]52;c;QQ==\x07\x1b[2J\x1b[31mred\x1b[0m\n\n"), "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &vertracloud.Client{Apps: &fakeApps{stream: &vertracloud.ApplicationRealtimeEventStream{EventStream: stream}}}
+	var out bytes.Buffer
+	if err := Follow(context.Background(), client, []string{"app-1", "--follow"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "\x1b[31mred\x1b[0m\n" {
+		t.Fatalf("got %q", out.String())
+	}
+}
+
 func TestSourceReaderUsesLocalIgnoreRules(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{

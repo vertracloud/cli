@@ -126,7 +126,7 @@ func releases(ctx context.Context, client *vertracloud.Client, args []string) (a
 	for _, r := range result.Data {
 		message := ""
 		if r.Message != nil {
-			message = strings.TrimSpace(strings.SplitN(*r.Message, "\n", 2)[0])
+			message = strings.TrimSpace(ui.Plain(strings.SplitN(*r.Message, "\n", 2)[0]))
 			if runes := []rune(message); len(runes) > 48 {
 				message = string(runes[:47]) + "…"
 			}
@@ -193,7 +193,7 @@ func rollback(ctx context.Context, client *vertracloud.Client, args []string, js
 		default:
 			fmt.Fprintln(os.Stderr, ui.Text("rollback_env_changes"))
 			for _, c := range preview.EnvironmentChanges {
-				fmt.Fprintf(os.Stderr, "  %s  %s\n", c.Key, ui.Dim(ui.Text("env_"+string(c.Change))))
+				fmt.Fprintf(os.Stderr, "  %s  %s\n", ui.Plain(c.Key), ui.Dim(ui.Text("env_"+string(c.Change))))
 			}
 		}
 		ok, err := confirm(os.Stdin, ui.Text("rollback_confirm")+" [y/N] ")

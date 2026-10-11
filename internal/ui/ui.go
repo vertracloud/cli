@@ -106,6 +106,10 @@ func PickID(label string, items []Choice) (string, error) {
 		return "", err
 	}
 	defer restoreTerminal(state)
+	items = append([]Choice(nil), items...)
+	for i := range items {
+		items[i].Label, items[i].Hint = Plain(items[i].Label), Plain(items[i].Hint)
+	}
 	width := 0
 	for _, item := range items {
 		width = max(width, len([]rune(item.Label)))

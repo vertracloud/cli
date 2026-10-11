@@ -522,7 +522,7 @@ func Follow(ctx context.Context, client *vertracloud.Client, args []string, out 
 	}
 	defer stream.Close()
 	for stream.Next(ctx) {
-		if _, err := fmt.Fprintln(out, stream.Event().Data); err != nil {
+		if _, err := fmt.Fprintln(out, ui.LogText(stream.Event().Data)); err != nil {
 			return err
 		}
 	}

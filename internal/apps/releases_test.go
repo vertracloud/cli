@@ -1,6 +1,7 @@
 package apps
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -18,12 +19,13 @@ type fakeReleases struct {
 	rollbackBody *vertracloud.ApplicationRollbackBody
 	rollbackErr  error
 	log          vertracloud.ApplicationReleaseLog
+	page         vertracloud.ApplicationReleasePage
 }
 
 func (f *fakeReleases) List(_ context.Context, _ string, p vertracloud.ApplicationReleasesListParams, _ ...rest.RequestOpt) (vertracloud.ApplicationReleasePage, error) {
 	f.calls = append(f.calls, "list")
 	f.listParams = p
-	return vertracloud.ApplicationReleasePage{}, nil
+	return f.page, nil
 }
 func (f *fakeReleases) Log(context.Context, string, string, ...rest.RequestOpt) (vertracloud.ApplicationReleaseLog, error) {
 	f.calls = append(f.calls, "log")
@@ -152,5 +154,47 @@ func TestConfigRejectsInvalidDeployFlags(t *testing.T) {
 	apps := &fakeApps{}
 	if _, err := run(t, apps, "config", "app-1", "--health-path", "/"+strings.Repeat("a", 199)); err != nil {
 		t.Fatalf("200 chars is the limit: %v", err)
+	}
+}
+
+func TestReleasesLogHostileOutputReachesTerminalClean(t *testing.T) {
+	hostile := "build ok\r\x1b[1A\x1b[2KContinue? [y/N]\n\x1b]52;c;ZXZpbA==\x07\x1b]0;t\x1b\\\x9b2J\x1b[32mgreen\x1b[0m\n"
+	apps := &fakeApps{}
+	apps.releases.log = vertracloud.ApplicationReleaseLog{Content: &hostile}
+	got, err := run(t, apps, "releases", "log", "app-1", "rel-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	ui.RenderPaged(&out, got, "app releases log app-1 rel-1", "en", 0, true)
+	s := out.String()
+	for _, bad := range []string{"\r", "\x07", "\x9b", "]52", "[1A", "[2K", "]0;"} {
+		if strings.Contains(s, bad) {
+			t.Fatalf("%q reached output: %q", bad, s)
+		}
+	}
+	if !strings.Contains(s, "build okContinue? [y/N]\n") || !strings.Contains(s, "\x1b[32mgreen\x1b[0m") {
+		t.Fatalf("legitimate text lost: %q", s)
+	}
+}
+
+func TestReleasesTableStripsEscapesFromMessageAndAuthor(t *testing.T) {
+	msg := "fix\x1b[2J\x1b]52;c;QQ==\x07 bug\nsecond line"
+	apps := &fakeApps{}
+	apps.releases.page = vertracloud.ApplicationReleasePage{Data: []vertracloud.ApplicationRelease{
+		{ID: "rel-1", Author: "mallory\r\x1b[1A", Message: &msg},
+	}}
+	got, err := run(t, apps, "releases", "app-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	ui.RenderPaged(&out, got, "app releases app-1", "en", 0, true)
+	s := out.String()
+	if strings.ContainsAny(s, "\x1b\x07\r") || strings.Contains(s, "[2J") || strings.Contains(s, "52;c") {
+		t.Fatalf("escape reached table: %q", s)
+	}
+	if !strings.Contains(s, "fix bug") || !strings.Contains(s, "mallory") || strings.Contains(s, "second line") {
+		t.Fatalf("table text: %q", s)
 	}
 }
