@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.4](https://github.com/vertracloud/cli/compare/v0.1.3...v0.1.4) (2026-10-12)
+
+
+### Features
+
+* **apps:** releases, rollback and deploy settings ([6181242](https://github.com/vertracloud/cli/commit/618124297629ccfab275ce7126db4de76bf054f6))
+* **commit:** send a commit message with -m or the last git subject ([a0b9652](https://github.com/vertracloud/cli/commit/a0b96528100a76ebffdab73eee1fb8e64d188ac1))
+
+
+### Bug Fixes
+
+* **ui:** strip terminal control sequences from text the server sends ([7260382](https://github.com/vertracloud/cli/commit/7260382f41153286c26ec5cced74ef22875139d6))
+
 ## [0.1.3](https://github.com/vertracloud/cli/compare/v0.1.2...v0.1.3) (2026-10-10)
 
 
