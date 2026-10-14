@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vertracloud/cli/internal/apps"
+	"github.com/vertracloud/cli/internal/blob"
 	"github.com/vertracloud/cli/internal/config"
 	"github.com/vertracloud/cli/internal/databases"
 	"github.com/vertracloud/cli/internal/local"
@@ -25,6 +26,11 @@ import (
 
 var version = "0.1.0-dev"
 var apiBaseURL = "https://api.vertracloud.app"
+
+// currentBlobBaseURL is empty by default: the SDK then uses its own Blob host.
+func currentBlobBaseURL() string {
+	return os.Getenv("VERTRA_BLOB_URL")
+}
 
 func currentAPIBaseURL() string {
 	if value := os.Getenv("VERTRA_API_URL"); value != "" {
@@ -235,7 +241,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	if err != nil {
 		return fail(errOut, jsonMode, "INVALID_ARGUMENT", err)
 	}
-	client := vertracloud.New(rc)
+	client := vertracloud.New(rc, vertracloud.WithBlobBaseURL(currentBlobBaseURL()))
 	var data any
 	switch args[0] {
 	case "auth":
@@ -323,6 +329,12 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		}
 	case "projects", "project", "proj":
 		data, err = projects(ctx, client, args[1:])
+	case "blob":
+		if len(args) < 2 {
+			err = errors.New("missing blob command")
+		} else {
+			data, err = blob.Run(ctx, client, args[1], args[2:], errOut)
+		}
 	case "workspace", "ws", "snapshot", "snapshots", "folder", "favorite", "fav":
 		data, err = resources.Run(ctx, client, args[0], args[1:])
 	default:
@@ -490,6 +502,7 @@ var topHelp = []helpSection{
 		{"snapshot", [3]string{"Cria, baixa e restaura snapshots", "Create, download and restore snapshots", "Crea, descarga y restaura snapshots"}},
 		{"folder", [3]string{"Organiza recursos em pastas", "Organize resources in folders", "Organiza recursos en carpetas"}},
 		{"favorite", [3]string{"Marca recursos como favoritos", "Mark resources as favorites", "Marca recursos como favoritos"}},
+		{"blob", [3]string{"Blob Storage: envia, baixa, lista e apaga arquivos", "Blob Storage: upload, download, list and delete files", "Blob Storage: sube, descarga, lista y borra archivos"}},
 	}},
 	{[3]string{"Conta e utilitários", "Account and tools", "Cuenta y utilidades"}, []helpEntry{
 		{"auth whoami", [3]string{"Mostra a conta conectada", "Show the signed-in account", "Muestra la cuenta conectada"}},
@@ -562,6 +575,14 @@ var groupHelp = map[string][]helpEntry{
 		{"create <name>", [3]string{"Cria uma pasta", "Create a folder", "Crea una carpeta"}},
 		{"update <id> [flags]", [3]string{"Renomeia ou muda a cor", "Rename or recolor", "Renombra o cambia el color"}},
 		{"delete <id> [--yes]", [3]string{"Exclui a pasta", "Delete the folder", "Elimina la carpeta"}},
+	},
+	"blob": {
+		{"ls [prefix] [--limit n]", [3]string{"Lista arquivos e pastas", "List files and folders", "Lista archivos y carpetas"}},
+		{"put <file> [path] [--public] [--overwrite]", [3]string{"Envia um arquivo, com barra de progresso", "Upload a file, with a progress bar", "Sube un archivo, con barra de progreso"}},
+		{"get <id|path> [destination]", [3]string{"Baixa um arquivo por link temporário", "Download a file through a temporary link", "Descarga un archivo con un enlace temporal"}},
+		{"rm <id>...", [3]string{"Apaga um ou mais arquivos", "Delete one or more files", "Borra uno o más archivos"}},
+		{"link <id> [--expires 600]", [3]string{"Cria um link temporário de download", "Create a temporary download link", "Crea un enlace temporal de descarga"}},
+		{"stats", [3]string{"Uso e limites do Blob", "Blob usage and limits", "Uso y límites de Blob"}},
 	},
 	"favorite": {
 		{"list", [3]string{"Lista seus favoritos", "List your favorites", "Lista tus favoritos"}},
@@ -725,16 +746,16 @@ func destructivePath(args []string, locale string) (bool, string) {
 		"app delete": true, "app file delete": true, "app network unpublish": true, "app network purge-cache": true,
 		"db delete": true, "db reset": true, "db credentials reset": true,
 		"workspace delete": true, "workspace invite revoke": true, "workspace invite decline": true, "workspace role delete": true, "workspace member remove": true,
-		"snapshot restore": true, "folder delete": true,
+		"snapshot restore": true, "folder delete": true, "blob rm": true,
 	}
 	path := group + " " + action
 	if !allowed[path] {
 		return false, ""
 	}
 	label := map[string]map[string]string{
-		"pt": {"app delete": "Excluir aplicação " + strings.Join(args[index:], " ") + "?", "app file delete": "Excluir arquivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Despublicar aplicação?", "app network purge-cache": "Limpar o cache da CDN?", "db delete": "Excluir banco de dados?", "db reset": "Redefinir banco de dados?", "db credentials reset": "Redefinir credenciais?", "workspace delete": "Excluir workspace?", "workspace invite revoke": "Revogar convite?", "workspace invite decline": "Recusar convite?", "workspace role delete": "Excluir função?", "workspace member remove": "Remover membro?", "snapshot restore": "Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Excluir pasta " + strings.Join(args[index:], " ") + "?"},
-		"es": {"app delete": "¿Eliminar aplicación " + strings.Join(args[index:], " ") + "?", "app file delete": "¿Eliminar archivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "¿Despublicar aplicación?", "app network purge-cache": "¿Limpiar la caché CDN?", "db delete": "¿Eliminar base de datos?", "db reset": "¿Restablecer base de datos?", "db credentials reset": "¿Restablecer credenciales?", "workspace delete": "¿Eliminar espacio de trabajo?", "workspace invite revoke": "¿Revocar invitación?", "workspace invite decline": "¿Rechazar invitación?", "workspace role delete": "¿Eliminar rol?", "workspace member remove": "¿Eliminar miembro?", "snapshot restore": "¿Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "¿Eliminar carpeta " + strings.Join(args[index:], " ") + "?"},
-		"en": {"app delete": "Delete application " + strings.Join(args[index:], " ") + "?", "app file delete": "Delete file " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Unpublish application?", "app network purge-cache": "Purge CDN cache?", "db delete": "Delete database?", "db reset": "Reset database?", "db credentials reset": "Reset database credentials?", "workspace delete": "Delete workspace?", "workspace invite revoke": "Revoke invitation?", "workspace invite decline": "Decline invitation?", "workspace role delete": "Delete role?", "workspace member remove": "Remove member?", "snapshot restore": "Restore snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Delete folder " + strings.Join(args[index:], " ") + "?"},
+		"pt": {"app delete": "Excluir aplicação " + strings.Join(args[index:], " ") + "?", "app file delete": "Excluir arquivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Despublicar aplicação?", "app network purge-cache": "Limpar o cache da CDN?", "db delete": "Excluir banco de dados?", "db reset": "Redefinir banco de dados?", "db credentials reset": "Redefinir credenciais?", "workspace delete": "Excluir workspace?", "workspace invite revoke": "Revogar convite?", "workspace invite decline": "Recusar convite?", "workspace role delete": "Excluir função?", "workspace member remove": "Remover membro?", "snapshot restore": "Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Excluir pasta " + strings.Join(args[index:], " ") + "?", "blob rm": "Excluir arquivos do Blob?"},
+		"es": {"app delete": "¿Eliminar aplicación " + strings.Join(args[index:], " ") + "?", "app file delete": "¿Eliminar archivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "¿Despublicar aplicación?", "app network purge-cache": "¿Limpiar la caché CDN?", "db delete": "¿Eliminar base de datos?", "db reset": "¿Restablecer base de datos?", "db credentials reset": "¿Restablecer credenciales?", "workspace delete": "¿Eliminar espacio de trabajo?", "workspace invite revoke": "¿Revocar invitación?", "workspace invite decline": "¿Rechazar invitación?", "workspace role delete": "¿Eliminar rol?", "workspace member remove": "¿Eliminar miembro?", "snapshot restore": "¿Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "¿Eliminar carpeta " + strings.Join(args[index:], " ") + "?", "blob rm": "¿Eliminar archivos de Blob?"},
+		"en": {"app delete": "Delete application " + strings.Join(args[index:], " ") + "?", "app file delete": "Delete file " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Unpublish application?", "app network purge-cache": "Purge CDN cache?", "db delete": "Delete database?", "db reset": "Reset database?", "db credentials reset": "Reset database credentials?", "workspace delete": "Delete workspace?", "workspace invite revoke": "Revoke invitation?", "workspace invite decline": "Decline invitation?", "workspace role delete": "Delete role?", "workspace member remove": "Remove member?", "snapshot restore": "Restore snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Delete folder " + strings.Join(args[index:], " ") + "?", "blob rm": "Delete Blob Storage files?"},
 	}[locale][path]
 	return true, label
 }

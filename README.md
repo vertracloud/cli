@@ -63,12 +63,26 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 | `vertra snapshot ...` | List, create, download and restore snapshots. |
 | `vertra workspace ...` | Workspaces, members, invites and roles. |
 | `vertra folder ...`, `vertra favorite ...` | Organize your resources. |
+| `vertra blob ...` | Blob Storage: list, upload (with a progress bar), download, delete, create temporary links and check usage. |
 | `vertra link [<id>]`, `vertra unlink` | Tie the current directory to an application. |
 | `vertra doctor`, `vertra zip` | Check and package the project locally. |
 | `vertra lang <pt\|en\|es>` | Change the CLI language. |
 | `vertra status` | Platform status. |
 
 `vertra app commit [<id>] [-m <message>]` sends a commit message with the upload, shown in the deploy history (up to 500 characters). Without `-m`, the CLI uses the subject of the last git commit in the folder, if there is one; otherwise the upload has no message.
+
+### Blob Storage
+
+```bash
+vertra blob ls photos/                       # files and folders under a prefix
+vertra blob put ./logo.png images/logo.png   # private by default; --public for a public URL
+vertra blob get images/logo.png ./logo.png   # downloads through a temporary link; never overwrites
+vertra blob link 1234567890 --expires 600    # temporary download link (60 to 86400 seconds)
+vertra blob rm 1234567890 --yes              # delete by ID
+vertra blob stats                            # usage against the plan quota
+```
+
+`get` accepts an object ID or the exact path. Large files are sent in parts automatically.
 
 ### Releases and rollback
 

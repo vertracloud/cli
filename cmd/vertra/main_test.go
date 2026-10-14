@@ -183,6 +183,8 @@ func TestDestructivePromptMatrix(t *testing.T) {
 		{[]string{"app", "network", "purge-cache", "id"}, true},
 		{[]string{"db", "credentials", "reset", "id", "password"}, true},
 		{[]string{"snapshot", "restore", "id"}, true},
+		{[]string{"blob", "rm", "id"}, true},
+		{[]string{"blob", "ls", "fotos/"}, false},
 		{[]string{"workspace", "member", "remove", "ws", "member"}, true},
 		{[]string{"folder", "remove", "id"}, false},
 		{[]string{"favorite", "remove", "app", "id"}, false},
