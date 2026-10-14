@@ -131,11 +131,12 @@ func TestPutAcceptsFlagsAfterPathAndSendsPublicVisibility(t *testing.T) {
 }
 
 func TestGetDownloadsThroughTemporaryLinkAndNeverOverwrites(t *testing.T) {
+	const objID = "282d2aec-80a0-4041-b7e4-6a6da0455d47"
 	client := newClient(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/v1/objects/9" && r.Method == http.MethodGet:
+		case r.URL.Path == "/v1/objects/"+objID && r.Method == http.MethodGet:
 			reply(t, w, sampleObject)
-		case r.URL.Path == "/v1/objects/9/download":
+		case r.URL.Path == "/v1/objects/9/download": // sampleObject id, returned by Get
 			if r.URL.Query().Get("redirect") != "false" {
 				t.Errorf("redirect = %q", r.URL.Query().Get("redirect"))
 			}
@@ -148,7 +149,7 @@ func TestGetDownloadsThroughTemporaryLinkAndNeverOverwrites(t *testing.T) {
 	})
 
 	dest := filepath.Join(t.TempDir(), "saida.png")
-	data, err := Run(context.Background(), client, "get", []string{"9", dest}, io.Discard)
+	data, err := Run(context.Background(), client, "get", []string{objID, dest}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +159,7 @@ func TestGetDownloadsThroughTemporaryLinkAndNeverOverwrites(t *testing.T) {
 	if body, _ := os.ReadFile(dest); string(body) != "oi!!" {
 		t.Fatalf("file = %q", body)
 	}
-	if _, err := Run(context.Background(), client, "get", []string{"9", dest}, io.Discard); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := Run(context.Background(), client, "get", []string{objID, dest}, io.Discard); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("second get err = %v, want already exists", err)
 	}
 }
@@ -228,5 +229,19 @@ func TestUnknownCommandAndNilClient(t *testing.T) {
 	client := newClient(t, func(w http.ResponseWriter, r *http.Request) {})
 	if _, err := Run(context.Background(), client, "nope", nil, io.Discard); err == nil {
 		t.Fatal("unknown command should fail")
+	}
+}
+
+func TestIsIDRecognizesObjectUUIDs(t *testing.T) {
+	for ref, want := range map[string]bool{
+		"282d2aec-80a0-4041-b7e4-6a6da0455d47": true,
+		"282D2AEC-80A0-4041-B7E4-6A6DA0455D47": true,
+		"img/logo.png":                         false,
+		"282d2aec-80a0-4041-b7e4-6a6da0455d4":  false,
+		"":                                     false,
+	} {
+		if got := isID(ref); got != want {
+			t.Errorf("isID(%q) = %v, want %v", ref, got, want)
+		}
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/vertracloud/cli/internal/ui"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
@@ -178,7 +179,7 @@ func get(ctx context.Context, b *vertracloud.BlobClient, args []string) (any, er
 	}, nil
 }
 
-// resolve accepts an object id (digits only) or the exact path of a file.
+// resolve accepts an object id (UUID) or the exact path of a file.
 func resolve(ctx context.Context, b *vertracloud.BlobClient, ref string) (vertracloud.BlobObject, error) {
 	if isID(ref) {
 		return b.Get(ctx, ref)
@@ -195,17 +196,9 @@ func resolve(ctx context.Context, b *vertracloud.BlobClient, ref string) (vertra
 	return vertracloud.BlobObject{}, fmt.Errorf("no file at path %q", ref)
 }
 
-func isID(ref string) bool {
-	if ref == "" {
-		return false
-	}
-	for _, r := range ref {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
+var objectIDPattern = regexp.MustCompile(`^(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func isID(ref string) bool { return objectIDPattern.MatchString(ref) }
 
 // download writes the link's body to name. O_EXCL: an existing file is an
 // error, never overwritten. A failed copy removes the partial file.
