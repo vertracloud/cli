@@ -90,6 +90,25 @@ func TestListSendsPrefixAndDelimiterAndReturnsFolders(t *testing.T) {
 	}
 }
 
+func TestPutRenameSendsRenameOnConflictAndRefusesOverwrite(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "a.txt")
+	if err := os.WriteFile(file, []byte("oi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if q := r.URL.Query(); q.Get("rename_on_conflict") != "true" {
+			t.Errorf("query = %v", q)
+		}
+		reply(t, w, sampleObject)
+	})
+	if _, err := Run(context.Background(), client, "put", []string{file, "--rename"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), client, "put", []string{file, "--rename", "--overwrite"}, io.Discard); err == nil {
+		t.Fatal("--rename with --overwrite must fail")
+	}
+}
+
 func TestPutAcceptsFlagsAfterPathAndSendsPublicVisibility(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "a.txt")
 	if err := os.WriteFile(file, []byte("oi!!"), 0o600); err != nil {

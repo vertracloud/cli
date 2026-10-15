@@ -578,7 +578,7 @@ var groupHelp = map[string][]helpEntry{
 	},
 	"blob": {
 		{"ls [prefix] [--limit n]", [3]string{"Lista arquivos e pastas", "List files and folders", "Lista archivos y carpetas"}},
-		{"put <file> [path] [--public] [--overwrite]", [3]string{"Envia um arquivo, com barra de progresso", "Upload a file, with a progress bar", "Sube un archivo, con barra de progreso"}},
+		{"put <file> [path] [--public] [--overwrite | --rename]", [3]string{"Envia um arquivo, com barra de progresso (--rename: nome ocupado vira nome-1)", "Upload a file, with a progress bar (--rename: a taken name becomes name-1)", "Sube un archivo, con barra de progreso (--rename: un nombre ocupado pasa a nombre-1)"}},
 		{"get <id|path> [destination]", [3]string{"Baixa um arquivo por link temporário", "Download a file through a temporary link", "Descarga un archivo con un enlace temporal"}},
 		{"rm <id>...", [3]string{"Apaga um ou mais arquivos", "Delete one or more files", "Borra uno o más archivos"}},
 		{"link <id> [--expires 600]", [3]string{"Cria um link temporário de download", "Create a temporary download link", "Crea un enlace temporal de descarga"}},

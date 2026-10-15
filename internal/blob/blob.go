@@ -102,16 +102,20 @@ func list(ctx context.Context, b *vertracloud.BlobClient, args []string) (any, e
 }
 
 func put(ctx context.Context, b *vertracloud.BlobClient, args []string, progress io.Writer) (any, error) {
-	public, overwrite := false, false
+	public, overwrite, rename := false, false, false
 	pos, err := parse("blob put", args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&public, "public", false, "public file")
 		fs.BoolVar(&overwrite, "overwrite", false, "replace an existing file at this path")
+		fs.BoolVar(&rename, "rename", false, "if the path is taken, save as name-1.ext, name-2.ext, ...")
 	})
 	if err != nil {
 		return nil, err
 	}
 	if len(pos) < 1 || len(pos) > 2 {
-		return nil, errors.New("use blob put <file> [path] [--public] [--overwrite]")
+		return nil, errors.New("use blob put <file> [path] [--public] [--overwrite | --rename]")
+	}
+	if overwrite && rename {
+		return nil, errors.New("use either --overwrite or --rename")
 	}
 
 	file, err := os.Open(pos[0])
@@ -138,9 +142,10 @@ func put(ctx context.Context, b *vertracloud.BlobClient, args []string, progress
 
 	update, done := ui.Progress(progress, "Uploading "+path)
 	obj, err := b.Put(ctx, path, file, info.Size(), &vertracloud.BlobPutOptions{
-		Visibility: visibility,
-		Overwrite:  &overwrite,
-		OnProgress: update,
+		Visibility:       visibility,
+		Overwrite:        &overwrite,
+		RenameOnConflict: &rename,
+		OnProgress:       update,
 	})
 	done()
 	if err != nil {

@@ -1,2 +1,4 @@
 github.com/vertracloud/sdk-api-go v0.2.0 h1:07uunEW5OPhFxpNinVyLl0JjCiYqqHktSbFCGqFlVoU=
 github.com/vertracloud/sdk-api-go v0.2.0/go.mod h1:/ESgXqwx6XnA4x8WWg4gxDP2QD4/kXOIwG5mXFUa7e8=
+github.com/vertracloud/sdk-api-go v0.2.1 h1:QtCGdkxeCkQ9jF6r1AlxpIHe1pjx7E5gFmzi7qOyhMw=
+github.com/vertracloud/sdk-api-go v0.2.1/go.mod h1:/ESgXqwx6XnA4x8WWg4gxDP2QD4/kXOIwG5mXFUa7e8=

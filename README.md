@@ -76,6 +76,7 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 ```bash
 vertra blob ls photos/                       # files and folders under a prefix
 vertra blob put ./logo.png images/logo.png   # private by default; --public for a public URL
+vertra blob put ./logo.png --rename          # if the name is taken, saves as logo-1.png, logo-2.png, ...
 vertra blob get images/logo.png ./logo.png   # downloads through a temporary link; never overwrites
 vertra blob link 1234567890 --expires 600    # temporary download link (60 to 86400 seconds)
 vertra blob rm 1234567890 --yes              # delete by ID
