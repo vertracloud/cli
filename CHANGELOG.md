@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/vertracloud/cli/compare/v0.1.4...v0.2.0) (2026-10-15)
+
+
+### Features
+
+* add vertra blob commands ([75e0cda](https://github.com/vertracloud/cli/commit/75e0cda9032181ce772b332237cad5755097a980))
+
+
+### Bug Fixes
+
+* **blob:** accept object UUIDs in get ([d4e589f](https://github.com/vertracloud/cli/commit/d4e589fce50ca728276e5c003223c71f491a726e))
+
 ## [0.1.4](https://github.com/vertracloud/cli/compare/v0.1.3...v0.1.4) (2026-10-12)
 
 
