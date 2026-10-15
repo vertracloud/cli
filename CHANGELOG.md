@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/vertracloud/cli/compare/v0.2.0...v0.2.1) (2026-10-15)
+
+
+### Features
+
+* **blob:** add --rename to blob put ([733445d](https://github.com/vertracloud/cli/commit/733445d9de216e7ea4af6d02c50ec1e7fd54032a))
+
 ## [0.2.0](https://github.com/vertracloud/cli/compare/v0.1.4...v0.2.0) (2026-10-15)
 
 
