@@ -277,7 +277,9 @@ func list(ctx context.Context, client *vertracloud.Client, args []string) (any, 
 			if !ok {
 				continue
 			}
-			rows[i]["status"] = map[bool]string{true: "up", false: "down"}[item.Running]
+			if app.Status != vertracloud.ApplicationStatusBuilding {
+				rows[i]["status"] = map[bool]string{true: "up", false: "down"}[item.Running]
+			}
 			rows[i]["installing"] = item.Installing != nil && *item.Installing
 			rows[i]["cpu"], rows[i]["ram_used"] = item.CPU, item.RAM
 		}

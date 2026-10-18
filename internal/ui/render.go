@@ -665,6 +665,8 @@ func statusWord(item map[string]any, locale string) (string, func(string) string
 		return "● " + text(locale, "online"), Green
 	case "down", "stopped", "offline", "exited":
 		return "○ " + text(locale, "offline"), Red
+	case "building":
+		return "● " + text(locale, "building"), Yellow
 	case "":
 		return "-", nil
 	}
@@ -908,7 +910,7 @@ var translations = map[string]map[string]string{
 		"custom_domain": "Domínio personalizado", "applications": "Aplicações", "databases": "Bancos de dados",
 		"email": "E-mail", "locale": "Idioma", "current": "Atual", "available": "Disponíveis", "ok": "Concluído.", "file": "Arquivo",
 		"folder": "Pasta", "not_configured": "Não configurado", "website": "Site", "bot": "Bot",
-		"yes": "Sim", "no": "Não", "online": "online", "offline": "offline", "installing": "instalando", "uptime": "Tempo ativo",
+		"yes": "Sim", "no": "Não", "online": "online", "offline": "offline", "installing": "instalando", "building": "construindo", "uptime": "Tempo ativo",
 		"network": "Rede", "plan": "Plano", "members_count": "Membros", "resource_name": "Recurso", "resource_type": "Tipo",
 		"resource_id": "ID do recurso", "size": "Tamanho", "date": "Data", "color": "Cor", "resources": "Recursos", "key": "Chave",
 		"value": "Valor", "note": "Nota", "last_modified": "Modificado em", "path": "Caminho", "host": "Host", "port": "Porta",
@@ -955,7 +957,7 @@ var translations = map[string]map[string]string{
 		"custom_domain": "Dominio personalizado", "applications": "Aplicaciones", "databases": "Bases de datos",
 		"email": "Correo", "locale": "Idioma", "current": "Actual", "available": "Disponibles", "ok": "Completado.", "file": "Archivo",
 		"folder": "Carpeta", "not_configured": "No configurado", "website": "Sitio web", "bot": "Bot",
-		"yes": "Sí", "no": "No", "online": "activa", "offline": "apagada", "installing": "instalando", "uptime": "Tiempo activo",
+		"yes": "Sí", "no": "No", "online": "activa", "offline": "apagada", "installing": "instalando", "building": "construyendo", "uptime": "Tiempo activo",
 		"network": "Red", "plan": "Plan", "members_count": "Miembros", "resource_name": "Recurso", "resource_type": "Tipo",
 		"resource_id": "ID del recurso", "size": "Tamaño", "date": "Fecha", "color": "Color", "resources": "Recursos", "key": "Clave",
 		"value": "Valor", "note": "Nota", "last_modified": "Modificado", "path": "Ruta", "host": "Host", "port": "Puerto",
@@ -1002,7 +1004,7 @@ var translations = map[string]map[string]string{
 		"custom_domain": "Custom domain", "applications": "Applications", "databases": "Databases",
 		"email": "Email", "locale": "Language", "current": "Current", "available": "Available", "ok": "Done.", "file": "File",
 		"folder": "Folder", "not_configured": "Not configured", "website": "Website", "bot": "Bot",
-		"yes": "Yes", "no": "No", "online": "online", "offline": "offline", "installing": "installing", "uptime": "Uptime",
+		"yes": "Yes", "no": "No", "online": "online", "offline": "offline", "installing": "installing", "building": "building", "uptime": "Uptime",
 		"network": "Network", "plan": "Plan", "members_count": "Members", "resource_name": "Resource", "resource_type": "Type",
 		"resource_id": "Resource ID", "size": "Size", "date": "Date", "color": "Color", "resources": "Resources", "key": "Key",
 		"value": "Value", "note": "Note", "last_modified": "Modified", "path": "Path", "host": "Host", "port": "Port",

@@ -272,3 +272,12 @@ func TestMemoryColorThresholds(t *testing.T) {
 		t.Fatal("80% should be yellow and 95% red")
 	}
 }
+
+func TestStatusWordBuildingIsLocalized(t *testing.T) {
+	for locale, want := range map[string]string{"pt": "construindo", "en": "building", "es": "construyendo"} {
+		got, _ := statusWord(map[string]any{"status": "building"}, locale)
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s: %q lacks %q", locale, got, want)
+		}
+	}
+}

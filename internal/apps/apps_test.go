@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/vertracloud/cli/internal/ui"
 	"io"
 	"net/url"
 	"os"
@@ -267,23 +268,25 @@ type fakeApps struct {
 	releases    fakeReleases
 	configBody  *vertracloud.ApplicationUpdateConfigBody
 	configErr   error
+	live        []vertracloud.ApplicationStatusShort
 }
 
 type fakeAccount struct {
 	vertracloud.AccountService
 	gets int
+	apps []vertracloud.Application
 }
 
 func (f *fakeAccount) Get(context.Context, ...rest.RequestOpt) (vertracloud.AccountInfo, error) {
 	f.gets++
-	return vertracloud.AccountInfo{}, nil
+	return vertracloud.AccountInfo{Applications: f.apps}, nil
 }
 
 func (f *fakeApps) Runtimes(context.Context, ...rest.RequestOpt) (vertracloud.ApplicationRuntimes, error) {
 	return nil, nil
 }
 func (f *fakeApps) StatusAll(context.Context, ...rest.RequestOpt) ([]vertracloud.ApplicationStatusShort, error) {
-	return nil, nil
+	return f.live, nil
 }
 func (f *fakeApps) Get(_ context.Context, id string, _ ...rest.RequestOpt) (vertracloud.Application, error) {
 	f.getID = id
@@ -600,5 +603,23 @@ func TestUploadWaitsForBuild(t *testing.T) {
 	apps = &fakeApps{createdApp: building, waitErr: &vertracloud.AppNotReadyError{Code: "INSTALL_OUT_OF_MEMORY"}}
 	if _, err := runUpload(t, apps); err == nil || !strings.Contains(err.Error(), "(INSTALL_OUT_OF_MEMORY): raise the app memory") {
 		t.Fatalf("oom err = %v", err)
+	}
+}
+
+func TestListKeepsBuildingStatus(t *testing.T) {
+	client := &vertracloud.Client{
+		Apps: &fakeApps{live: []vertracloud.ApplicationStatusShort{{ID: "a1"}, {ID: "a2", Running: true}}},
+		Account: &fakeAccount{apps: []vertracloud.Application{
+			{ID: "a1", Status: vertracloud.ApplicationStatusBuilding},
+			{ID: "a2", Status: vertracloud.ApplicationStatusUp},
+		}},
+	}
+	got, err := list(context.Background(), client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := got.(ui.Presentation).Human.([]map[string]any)
+	if rows[0]["status"] != "building" || rows[1]["status"] != "up" {
+		t.Fatalf("statuses = %v, %v", rows[0]["status"], rows[1]["status"])
 	}
 }
