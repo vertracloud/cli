@@ -722,7 +722,8 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	subdomain := f.String("subdomain", "", "subdomain")
 	start := f.String("start", "", "start command")
 	workspace := f.String("workspace", "", "workspace id")
-	pos, err := parse(f, args, map[string]bool{"--file": true, "--name": true, "--memory": true, "--main": true, "--version": true, "--description": true, "--subdomain": true, "--start": true, "--workspace": true}, nil)
+	noWait := f.Bool("no-wait", false, "return right after the upload, without waiting for the build")
+	pos, err := parse(f, args, map[string]bool{"--file": true, "--name": true, "--memory": true, "--main": true, "--version": true, "--description": true, "--subdomain": true, "--start": true, "--workspace": true}, map[string]bool{"--no-wait": true})
 	if err != nil {
 		return nil, err
 	}
@@ -812,7 +813,22 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 			return nil, e
 		}
 	}
-	return app, nil
+	// Create answers 202 while the build runs; follow it until the app is up or down.
+	if *noWait || app.Status != vertracloud.ApplicationStatusBuilding {
+		return app, nil
+	}
+	stopBuild := spin(jsonMode, "build")
+	defer stopBuild()
+	ready, err := client.Apps.WaitUntilReady(ctx, app.ID, nil)
+	stopBuild()
+	var down *vertracloud.AppNotReadyError
+	if errors.As(err, &down) {
+		return nil, fmt.Errorf("the build of app %s failed and the app is down (%s)%s; see the cause with: vertra app logs %s", app.ID, down.Code, buildErrorHint(down.Code), app.ID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ready, nil
 }
 
 func commit(ctx context.Context, client *vertracloud.Client, args []string, jsonMode bool) (any, error) {
@@ -1179,6 +1195,25 @@ func fileIDPath(ctx context.Context, client *vertracloud.Client, pos []string, a
 	return id, pos[0], nil
 }
 
+// buildErrorHint is the short "what to do" for an application's last_build_error code
+// (empty for APP_DOWN or unknown codes), in the CLI language.
+func buildErrorHint(code string) string {
+	hints := map[string]map[string]string{
+		"INSTALL_OUT_OF_MEMORY":  {"pt": "aumente a memória do app", "en": "raise the app memory", "es": "aumenta la memoria de la app"},
+		"BUILD_FAILED":           {"pt": "leia o log e corrija o projeto", "en": "read the log and fix the project", "es": "lee el log y corrige el proyecto"},
+		"INSTALL_FAILED":         {"pt": "leia o log e corrija o projeto", "en": "read the log and fix the project", "es": "lee el log y corrige el proyecto"},
+		"BUILD_TIMEOUT":          {"pt": "reduza o tempo do build", "en": "make the build shorter", "es": "reduce el tiempo del build"},
+		"INSTALL_TIMEOUT":        {"pt": "reduza o tempo da instalação", "en": "make the install shorter", "es": "reduce el tiempo de la instalación"},
+		"BUILD_INTERRUPTED":      {"pt": "tente de novo", "en": "try again", "es": "inténtalo de nuevo"},
+		"INSTALL_SHIELD_BLOCKED": {"pt": "o tráfego foi bloqueado pela proteção de rede durante o build", "en": "network protection blocked traffic during the build", "es": "la protección de red bloqueó el tráfico durante el build"},
+	}
+	h := hints[code]
+	if h == nil {
+		return ""
+	}
+	return ": " + h[ui.Locale]
+}
+
 // spin shows progress on stderr for slow transfers; JSON runs stay silent.
 func spin(jsonMode bool, action string) func() {
 	if jsonMode {
@@ -1186,6 +1221,7 @@ func spin(jsonMode bool, action string) func() {
 	}
 	labels := map[string]map[string]string{
 		"upload": {"pt": "Compactando e enviando a aplicação…", "en": "Packing and uploading the application…", "es": "Comprimiendo y subiendo la aplicación…"},
+		"build":  {"pt": "Construindo a aplicação…", "en": "Building the application…", "es": "Construyendo la aplicación…"},
 		"commit": {"pt": "Compactando e enviando os arquivos…", "en": "Packing and uploading files…", "es": "Comprimiendo y subiendo los archivos…"},
 	}
 	return ui.Spin(labels[action][ui.Locale])

@@ -258,6 +258,10 @@ type fakeApps struct {
 	deleted     string
 	getID       string
 	createCalls int
+	createdApp  vertracloud.Application
+	waitApp     vertracloud.Application
+	waitErr     error
+	waitCalls   int
 	stream      *vertracloud.ApplicationRealtimeEventStream
 	files       fakeFiles
 	releases    fakeReleases
@@ -303,7 +307,11 @@ func (f *fakeApps) Download(context.Context, string, ...rest.RequestOpt) (io.Rea
 }
 func (f *fakeApps) Create(context.Context, vertracloud.ApplicationCreateParams, ...rest.RequestOpt) (vertracloud.Application, error) {
 	f.createCalls++
-	return vertracloud.Application{}, nil
+	return f.createdApp, nil
+}
+func (f *fakeApps) WaitUntilReady(context.Context, string, *vertracloud.WaitOptions, ...rest.RequestOpt) (vertracloud.Application, error) {
+	f.waitCalls++
+	return f.waitApp, f.waitErr
 }
 func (f *fakeApps) Start(context.Context, string, ...rest.RequestOpt) (vertracloud.ApplicationOperationResponse, error) {
 	return vertracloud.ApplicationOperationResponse{}, nil
@@ -556,5 +564,41 @@ func TestMetricsAcceptsTableAndAllAliases(t *testing.T) {
 		if _, err := Run(context.Background(), client, "metrics", flags); err != nil {
 			t.Fatalf("metrics %v: %v", flags, err)
 		}
+	}
+}
+
+func runUpload(t *testing.T, apps *fakeApps, extra ...string) (any, error) {
+	t.Helper()
+	original, _ := os.Getwd()
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(original)
+	zipPath := filepath.Join(t.TempDir(), "a.zip")
+	if err := os.WriteFile(zipPath, []byte("PK"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--name", "a", "--memory", "256", "--main", "index.js", "--file", zipPath}
+	return RunWithOptions(context.Background(), &vertracloud.Client{Apps: apps}, "upload", append(args, extra...), true)
+}
+
+func TestUploadWaitsForBuild(t *testing.T) {
+	building := vertracloud.Application{ID: "app-1", Status: vertracloud.ApplicationStatusBuilding}
+	apps := &fakeApps{createdApp: building, waitApp: vertracloud.Application{ID: "app-1", Status: vertracloud.ApplicationStatusUp}}
+	got, err := runUpload(t, apps)
+	if err != nil || apps.waitCalls != 1 || got.(vertracloud.Application).Status != vertracloud.ApplicationStatusUp {
+		t.Fatalf("got=%#v err=%v waits=%d", got, err, apps.waitCalls)
+	}
+	apps = &fakeApps{createdApp: building}
+	if _, err := runUpload(t, apps, "--no-wait"); err != nil || apps.waitCalls != 0 {
+		t.Fatalf("--no-wait: err=%v waits=%d", err, apps.waitCalls)
+	}
+	apps = &fakeApps{createdApp: building, waitErr: &vertracloud.AppNotReadyError{Code: "APP_DOWN"}}
+	if _, err := runUpload(t, apps); err == nil || !strings.Contains(err.Error(), "APP_DOWN") {
+		t.Fatalf("down err = %v", err)
+	}
+	apps = &fakeApps{createdApp: building, waitErr: &vertracloud.AppNotReadyError{Code: "INSTALL_OUT_OF_MEMORY"}}
+	if _, err := runUpload(t, apps); err == nil || !strings.Contains(err.Error(), "(INSTALL_OUT_OF_MEMORY): raise the app memory") {
+		t.Fatalf("oom err = %v", err)
 	}
 }
