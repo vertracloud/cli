@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/vertracloud/cli/compare/v0.2.1...v0.2.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **apps:** show building status in app list ([c6c0a4e](https://github.com/vertracloud/cli/commit/c6c0a4ee5ca995814c3f34dee8a7f36d6563bc8f))
+* **apps:** wait for the async build on upload ([59e505d](https://github.com/vertracloud/cli/commit/59e505db302dc2a9c6f2ee349762d384600f6c0a))
+
 ## [0.2.1](https://github.com/vertracloud/cli/compare/v0.2.0...v0.2.1) (2026-10-15)
 
 
