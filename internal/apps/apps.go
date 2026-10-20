@@ -1290,7 +1290,11 @@ func domains(ctx context.Context, client *vertracloud.Client, args []string) (an
 			return nil, err
 		}
 		if !*yes {
-			prompt := fmt.Sprintf("Remove domain %s from app %s? [y/N] ", ui.Plain(domain.Hostname), appLabel(ctx, client, id))
+			companion := ""
+			if domain.CompanionOf == nil {
+				companion = " Its automatic companion is removed too."
+			}
+			prompt := fmt.Sprintf("Remove domain %s from app %s?%s [y/N] ", ui.Plain(domain.Hostname), appLabel(ctx, client, id), companion)
 			ok, e := confirm(os.Stdin, prompt)
 			if e != nil {
 				return nil, e

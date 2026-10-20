@@ -564,6 +564,30 @@ func TestDomainsRemovePromptNamesHostnameAndApp(t *testing.T) {
 	}
 }
 
+func removePrompt(t *testing.T, domains ...vertracloud.ApplicationDomain) string {
+	t.Helper()
+	apps := &fakeApps{getApp: vertracloud.Application{ID: "app-1", Name: "Loja"}}
+	apps.domains.existing = domains
+	client := &vertracloud.Client{Apps: apps}
+	errR := withStdinAndStderr(t, "n\n")
+	_, _ = Run(context.Background(), client, "domains", []string{"remove", domains[0].ID, "--app", "app-1"})
+	_ = os.Stderr.Close()
+	prompt, _ := io.ReadAll(errR)
+	return string(prompt)
+}
+
+func TestDomainsRemovePromptMentionsCompanionOnlyWhenItGoesToo(t *testing.T) {
+	main := removePrompt(t, vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
+	if !strings.Contains(main, "automatic companion") {
+		t.Errorf("main domain prompt %q should mention the companion", main)
+	}
+	parent := "d1"
+	companion := removePrompt(t, vertracloud.ApplicationDomain{ID: "d2", Hostname: "www.x.com", CompanionOf: &parent})
+	if strings.Contains(companion, "companion") {
+		t.Errorf("companion prompt %q must not mention a companion", companion)
+	}
+}
+
 func TestDomainsUnknownReferenceFails(t *testing.T) {
 	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
 	if _, err := Run(context.Background(), client, "domains", []string{"remove", "nope.com", "--app", "app-1", "--yes"}); err == nil || domains.removed != "" {
