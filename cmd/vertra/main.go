@@ -340,6 +340,13 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	default:
 		err = fmt.Errorf("unknown command %q", args[0])
 	}
+	return finish(out, errOut, jsonMode, locale, data, err, args)
+}
+
+func finish(out, errOut io.Writer, jsonMode bool, locale string, data any, err error, args []string) int {
+	if errors.Is(err, apps.ErrDeclined) {
+		return fail(errOut, jsonMode, "CANCELLED", errors.New(cancelled(locale)))
+	}
 	if errors.Is(err, apps.ErrCancelled) {
 		fmt.Fprintln(out, cancelled(locale))
 		return 0
@@ -726,13 +733,20 @@ func destructivePath(args []string, locale string) (bool, string) {
 		return false, ""
 	}
 	group, action := args[0], args[1]
+	if group == "apps" {
+		group = "app"
+	}
 	index := 2
 	if group == "app" && action == "file" && len(args) > 2 {
 		action = "file " + args[2]
 		index = 3
 	}
 	if group == "app" && (action == "network" || action == "domains") && len(args) > 2 {
-		action = action + " " + args[2]
+		sub := args[2]
+		if action == "domains" && (sub == "rm" || sub == "delete") {
+			sub = "remove"
+		}
+		action = action + " " + sub
 		index = 3
 	}
 	if group == "db" && action == "credentials" && len(args) > 2 {
@@ -754,9 +768,9 @@ func destructivePath(args []string, locale string) (bool, string) {
 		return false, ""
 	}
 	label := map[string]map[string]string{
-		"pt": {"app delete": "Excluir aplicação " + strings.Join(args[index:], " ") + "?", "app file delete": "Excluir arquivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Despublicar aplicação?", "app domains remove": "Remover domínio?", "app network purge-cache": "Limpar o cache da CDN?", "db delete": "Excluir banco de dados?", "db reset": "Redefinir banco de dados?", "db credentials reset": "Redefinir credenciais?", "workspace delete": "Excluir workspace?", "workspace invite revoke": "Revogar convite?", "workspace invite decline": "Recusar convite?", "workspace role delete": "Excluir função?", "workspace member remove": "Remover membro?", "snapshot restore": "Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Excluir pasta " + strings.Join(args[index:], " ") + "?", "blob rm": "Excluir arquivos do Blob?"},
-		"es": {"app delete": "¿Eliminar aplicación " + strings.Join(args[index:], " ") + "?", "app file delete": "¿Eliminar archivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "¿Despublicar aplicación?", "app domains remove": "¿Eliminar dominio?", "app network purge-cache": "¿Limpiar la caché CDN?", "db delete": "¿Eliminar base de datos?", "db reset": "¿Restablecer base de datos?", "db credentials reset": "¿Restablecer credenciales?", "workspace delete": "¿Eliminar espacio de trabajo?", "workspace invite revoke": "¿Revocar invitación?", "workspace invite decline": "¿Rechazar invitación?", "workspace role delete": "¿Eliminar rol?", "workspace member remove": "¿Eliminar miembro?", "snapshot restore": "¿Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "¿Eliminar carpeta " + strings.Join(args[index:], " ") + "?", "blob rm": "¿Eliminar archivos de Blob?"},
-		"en": {"app delete": "Delete application " + strings.Join(args[index:], " ") + "?", "app file delete": "Delete file " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Unpublish application?", "app domains remove": "Remove domain?", "app network purge-cache": "Purge CDN cache?", "db delete": "Delete database?", "db reset": "Reset database?", "db credentials reset": "Reset database credentials?", "workspace delete": "Delete workspace?", "workspace invite revoke": "Revoke invitation?", "workspace invite decline": "Decline invitation?", "workspace role delete": "Delete role?", "workspace member remove": "Remove member?", "snapshot restore": "Restore snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Delete folder " + strings.Join(args[index:], " ") + "?", "blob rm": "Delete Blob Storage files?"},
+		"pt": {"app delete": "Excluir aplicação " + strings.Join(args[index:], " ") + "?", "app file delete": "Excluir arquivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Despublicar aplicação?", "app domains remove": "Remover domínio " + strings.Join(args[index:], " ") + "?", "app network purge-cache": "Limpar o cache da CDN?", "db delete": "Excluir banco de dados?", "db reset": "Redefinir banco de dados?", "db credentials reset": "Redefinir credenciais?", "workspace delete": "Excluir workspace?", "workspace invite revoke": "Revogar convite?", "workspace invite decline": "Recusar convite?", "workspace role delete": "Excluir função?", "workspace member remove": "Remover membro?", "snapshot restore": "Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Excluir pasta " + strings.Join(args[index:], " ") + "?", "blob rm": "Excluir arquivos do Blob?"},
+		"es": {"app delete": "¿Eliminar aplicación " + strings.Join(args[index:], " ") + "?", "app file delete": "¿Eliminar archivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "¿Despublicar aplicación?", "app domains remove": "¿Eliminar dominio " + strings.Join(args[index:], " ") + "?", "app network purge-cache": "¿Limpiar la caché CDN?", "db delete": "¿Eliminar base de datos?", "db reset": "¿Restablecer base de datos?", "db credentials reset": "¿Restablecer credenciales?", "workspace delete": "¿Eliminar espacio de trabajo?", "workspace invite revoke": "¿Revocar invitación?", "workspace invite decline": "¿Rechazar invitación?", "workspace role delete": "¿Eliminar rol?", "workspace member remove": "¿Eliminar miembro?", "snapshot restore": "¿Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "¿Eliminar carpeta " + strings.Join(args[index:], " ") + "?", "blob rm": "¿Eliminar archivos de Blob?"},
+		"en": {"app delete": "Delete application " + strings.Join(args[index:], " ") + "?", "app file delete": "Delete file " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Unpublish application?", "app domains remove": "Remove domain " + strings.Join(args[index:], " ") + "?", "app network purge-cache": "Purge CDN cache?", "db delete": "Delete database?", "db reset": "Reset database?", "db credentials reset": "Reset database credentials?", "workspace delete": "Delete workspace?", "workspace invite revoke": "Revoke invitation?", "workspace invite decline": "Decline invitation?", "workspace role delete": "Delete role?", "workspace member remove": "Remove member?", "snapshot restore": "Restore snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Delete folder " + strings.Join(args[index:], " ") + "?", "blob rm": "Delete Blob Storage files?"},
 	}[locale][path]
 	return true, label
 }

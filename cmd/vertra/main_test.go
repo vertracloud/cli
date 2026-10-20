@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vertracloud/cli/internal/apps"
 	"github.com/vertracloud/cli/internal/ui"
 	"github.com/vertracloud/sdk-api-go/rest"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
@@ -201,11 +202,53 @@ func TestDestructivePromptMatrix(t *testing.T) {
 }
 
 func TestDomainsRemoveConfirmationLabelIsLocalized(t *testing.T) {
-	for locale, want := range map[string]string{"pt": "Remover domínio?", "en": "Remove domain?", "es": "¿Eliminar dominio?"} {
-		ok, label := destructivePath([]string{"app", "domains", "remove", "id", "x.com"}, locale)
+	for locale, want := range map[string]string{"pt": "Remover domínio --app app-1 x.com?", "en": "Remove domain --app app-1 x.com?", "es": "¿Eliminar dominio --app app-1 x.com?"} {
+		ok, label := destructivePath([]string{"app", "domains", "remove", "--app", "app-1", "x.com"}, locale)
 		if !ok || label != want {
 			t.Errorf("%s: ok=%v label=%q, want %q", locale, ok, label, want)
 		}
+	}
+}
+
+func TestDomainsRemoveAliasesAreDestructive(t *testing.T) {
+	for _, args := range [][]string{
+		{"apps", "domains", "remove", "id", "x.com"},
+		{"app", "domains", "rm", "id", "x.com"},
+		{"app", "domains", "delete", "id", "x.com"},
+		{"apps", "domains", "rm", "id", "x.com"},
+		{"apps", "domains", "delete", "id", "x.com"},
+	} {
+		ok, label := destructivePath(args, "en")
+		if !ok || !strings.Contains(label, "x.com") {
+			t.Errorf("destructivePath(%v) = %v, %q", args, ok, label)
+		}
+	}
+}
+
+func TestJsonDomainsRemoveAliasRequiresConfirmationBeforeNetwork(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VERTRA_API_KEY", "dummy")
+	for _, args := range [][]string{
+		{"--json", "apps", "domains", "rm", "--app", "app-1", "x.com"},
+		{"--json", "app", "domains", "delete", "--app", "app-1", "x.com"},
+	} {
+		var out, errOut bytes.Buffer
+		if code := run(context.Background(), args, &out, &errOut); code != 1 {
+			t.Fatalf("%v: exit=%d", args, code)
+		}
+		if out.Len() != 0 || !strings.Contains(errOut.String(), `"code":"CONFIRMATION_REQUIRED"`) {
+			t.Fatalf("%v: stdout=%q stderr=%q", args, out.String(), errOut.String())
+		}
+	}
+}
+
+func TestDeclinedDomainsRemoveExitsNonZeroWithCancelledMessage(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := finish(&out, &errOut, false, "en", nil, apps.ErrDeclined, nil); code != 1 {
+		t.Fatalf("exit=%d", code)
+	}
+	if out.Len() != 0 || !strings.Contains(errOut.String(), "Operation cancelled.") {
+		t.Fatalf("stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 }
 

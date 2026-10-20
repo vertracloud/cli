@@ -258,6 +258,7 @@ func TestFileWriteAndMoveReturnNodeSuccessShapes(t *testing.T) {
 type fakeApps struct {
 	deleted     string
 	getID       string
+	getApp      vertracloud.Application
 	createCalls int
 	createdApp  vertracloud.Application
 	waitApp     vertracloud.Application
@@ -291,7 +292,7 @@ func (f *fakeApps) StatusAll(context.Context, ...rest.RequestOpt) ([]vertracloud
 }
 func (f *fakeApps) Get(_ context.Context, id string, _ ...rest.RequestOpt) (vertracloud.Application, error) {
 	f.getID = id
-	return vertracloud.Application{}, nil
+	return f.getApp, nil
 }
 func (f *fakeApps) Status(context.Context, string, ...rest.RequestOpt) (vertracloud.ApplicationStatusInfo, error) {
 	return vertracloud.ApplicationStatusInfo{}, nil
@@ -504,6 +505,62 @@ func TestDomainsRemoveYesAndDNSResolveByHostname(t *testing.T) {
 	}
 	if _, err := Run(context.Background(), client, "domains", []string{"dns", "d1", "--app", "app-1"}); err != nil || domains.dnsID != "d1" {
 		t.Fatalf("err=%v dns=%q", err, domains.dnsID)
+	}
+}
+
+func withStdinAndStderr(t *testing.T, stdin string) *os.File {
+	t.Helper()
+	inR, inW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = inW.WriteString(stdin)
+	_ = inW.Close()
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldIn, oldErr := os.Stdin, os.Stderr
+	os.Stdin, os.Stderr = inR, errW
+	t.Cleanup(func() { os.Stdin, os.Stderr = oldIn, oldErr })
+	return errR
+}
+
+func TestDomainsRemoveDeclinedOrEmptyStdinIsNotSuccess(t *testing.T) {
+	for _, alias := range []string{"remove", "rm", "delete"} {
+		for name, stdin := range map[string]string{"empty": "", "no": "n\n"} {
+			t.Run(alias+"/"+name, func(t *testing.T) {
+				client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
+				withStdinAndStderr(t, stdin)
+				got, err := Run(context.Background(), client, "domains", []string{alias, "x.com", "--app", "app-1"})
+				if !errors.Is(err, ErrDeclined) || got != nil || domains.removed != "" {
+					t.Fatalf("got=%#v err=%v removed=%q", got, err, domains.removed)
+				}
+			})
+		}
+	}
+}
+
+func TestDomainsRemoveConfirmedWithYes(t *testing.T) {
+	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
+	withStdinAndStderr(t, "y\n")
+	if _, err := Run(context.Background(), client, "domains", []string{"rm", "x.com", "--app", "app-1"}); err != nil || domains.removed != "d1" {
+		t.Fatalf("err=%v removed=%q", err, domains.removed)
+	}
+}
+
+func TestDomainsRemovePromptNamesHostnameAndApp(t *testing.T) {
+	apps := &fakeApps{getApp: vertracloud.Application{ID: "app-1", Name: "Loja"}}
+	apps.domains.existing = []vertracloud.ApplicationDomain{{ID: "d1", Hostname: "x.com"}}
+	client := &vertracloud.Client{Apps: apps}
+	errR := withStdinAndStderr(t, "n\n")
+	_, _ = Run(context.Background(), client, "domains", []string{"remove", "d1", "--app", "app-1"})
+	_ = os.Stderr.Close()
+	prompt, _ := io.ReadAll(errR)
+	for _, want := range []string{"x.com", "Loja", "app-1"} {
+		if !strings.Contains(string(prompt), want) {
+			t.Errorf("prompt %q does not contain %q", prompt, want)
+		}
 	}
 }
 

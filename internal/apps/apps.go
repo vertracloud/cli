@@ -1285,20 +1285,24 @@ func domains(ctx context.Context, client *vertracloud.Client, args []string) (an
 		if err != nil {
 			return nil, err
 		}
-		domainID, err := resolveDomainID(ctx, client, id, pos[0])
+		domain, err := findDomain(ctx, client, id, pos[0])
 		if err != nil {
 			return nil, err
 		}
 		if !*yes {
-			ok, e := confirm(os.Stdin, fmt.Sprintf("Remove domain %s? [y/N] ", pos[0]))
-			if e != nil || !ok {
+			prompt := fmt.Sprintf("Remove domain %s from app %s? [y/N] ", ui.Plain(domain.Hostname), appLabel(ctx, client, id))
+			ok, e := confirm(os.Stdin, prompt)
+			if e != nil {
 				return nil, e
 			}
+			if !ok {
+				return nil, ErrDeclined
+			}
 		}
-		if err := client.Apps.Domains().Remove(ctx, id, domainID); err != nil {
+		if err := client.Apps.Domains().Remove(ctx, id, domain.ID); err != nil {
 			return nil, err
 		}
-		return map[string]string{"id": domainID}, nil
+		return map[string]string{"id": domain.ID}, nil
 	case "dns":
 		f := fs("app domains dns")
 		app := f.String("app", "", "app id")
@@ -1353,17 +1357,30 @@ func nullableString(value string) *vertracloud.Nullable[string] {
 }
 
 // resolveDomainID accepts a domain id or a hostname of the app.
-func resolveDomainID(ctx context.Context, client *vertracloud.Client, appID, ref string) (string, error) {
+func findDomain(ctx context.Context, client *vertracloud.Client, appID, ref string) (vertracloud.ApplicationDomain, error) {
 	list, err := client.Apps.Domains().List(ctx, appID)
 	if err != nil {
-		return "", err
+		return vertracloud.ApplicationDomain{}, err
 	}
 	for _, d := range list {
 		if d.ID == ref || strings.EqualFold(d.Hostname, ref) {
-			return d.ID, nil
+			return d, nil
 		}
 	}
-	return "", fmt.Errorf("domain %q not found in this app", ref)
+	return vertracloud.ApplicationDomain{}, fmt.Errorf("domain %q not found in this app", ref)
+}
+
+func resolveDomainID(ctx context.Context, client *vertracloud.Client, appID, ref string) (string, error) {
+	domain, err := findDomain(ctx, client, appID, ref)
+	return domain.ID, err
+}
+
+func appLabel(ctx context.Context, client *vertracloud.Client, id string) string {
+	app, err := client.Apps.Get(ctx, id)
+	if err != nil || app.Name == "" {
+		return id
+	}
+	return fmt.Sprintf("%s (%s)", ui.Plain(app.Name), id)
 }
 
 func destructiveNetwork(ctx context.Context, client *vertracloud.Client, args []string, purge bool) (any, error) {
