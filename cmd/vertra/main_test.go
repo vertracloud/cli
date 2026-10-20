@@ -181,6 +181,9 @@ func TestDestructivePromptMatrix(t *testing.T) {
 		{[]string{"app", "delete", "id"}, true},
 		{[]string{"app", "file", "delete", "id", "/tmp/a"}, true},
 		{[]string{"app", "network", "purge-cache", "id"}, true},
+		{[]string{"app", "domains", "remove", "id", "example.com"}, true},
+		{[]string{"app", "domains", "list", "id"}, false},
+		{[]string{"app", "domains", "update", "id", "example.com", "--primary"}, false},
 		{[]string{"db", "credentials", "reset", "id", "password"}, true},
 		{[]string{"snapshot", "restore", "id"}, true},
 		{[]string{"blob", "rm", "id"}, true},
@@ -193,6 +196,15 @@ func TestDestructivePromptMatrix(t *testing.T) {
 		got, _ := destructivePath(tc.args, "en")
 		if got != tc.want {
 			t.Errorf("destructivePath(%v) = %v, want %v", tc.args, got, tc.want)
+		}
+	}
+}
+
+func TestDomainsRemoveConfirmationLabelIsLocalized(t *testing.T) {
+	for locale, want := range map[string]string{"pt": "Remover domínio?", "en": "Remove domain?", "es": "¿Eliminar dominio?"} {
+		ok, label := destructivePath([]string{"app", "domains", "remove", "id", "x.com"}, locale)
+		if !ok || label != want {
+			t.Errorf("%s: ok=%v label=%q, want %q", locale, ok, label, want)
 		}
 	}
 }

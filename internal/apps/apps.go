@@ -69,6 +69,8 @@ func RunWithOptions(ctx context.Context, client *vertracloud.Client, command str
 		return file(ctx, client, args, jsonMode)
 	case "network":
 		return network(ctx, client, args)
+	case "domains":
+		return domains(ctx, client, args)
 	default:
 		return nil, fmt.Errorf("unknown app command %q", command)
 	}
@@ -359,10 +361,14 @@ func appMatchesFilter(app vertracloud.Application, key, op, value string) bool {
 			got = "website"
 		}
 	case "domain":
-		got = ptrString(app.CustomDomain)
-		if got == "" {
-			got = ptrString(app.Subdomain)
+		hosts := make([]string, 0, len(app.Domains)+1)
+		for _, d := range app.Domains {
+			hosts = append(hosts, d.Hostname)
 		}
+		if app.Subdomain != nil {
+			hosts = append(hosts, *app.Subdomain)
+		}
+		return domainFilterMatches(hosts, op, value)
 	case "ram":
 		got = strconv.Itoa(app.RAM)
 	default:
@@ -397,6 +403,28 @@ func appMatchesFilter(app vertracloud.Application, key, op, value string) bool {
 		return strings.Contains(strings.ToLower(got), strings.ToLower(value))
 	}
 	return strings.EqualFold(got, value)
+}
+
+func domainFilterMatches(hosts []string, op, value string) bool {
+	contains := false
+	for _, host := range hosts {
+		if strings.Contains(strings.ToLower(host), strings.ToLower(value)) {
+			contains = true
+			break
+		}
+	}
+	switch op {
+	case "=":
+		return contains
+	case "!=":
+		for _, host := range hosts {
+			if strings.EqualFold(host, value) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func status(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
@@ -1095,34 +1123,6 @@ func network(ctx context.Context, client *vertracloud.Client, args []string) (an
 		return nil, errors.New("missing network command")
 	}
 	switch strings.ToLower(args[0]) {
-	case "dns":
-		return oneID(ctx, client, args[1:], "app network dns", func(id string) (any, error) { return client.Apps.Network().DNS(ctx, id) })
-	case "domain":
-		f := fs("app network domain")
-		app := f.String("app", "", "app id")
-		remove := f.Bool("remove", false, "remove domain")
-		pos, err := parse(f, args[1:], map[string]bool{"--app": true}, map[string]bool{"--remove": true})
-		if err != nil {
-			return nil, err
-		}
-		id, err := resolveAppID(ctx, client, *app, "app network domain")
-		if err != nil {
-			return nil, err
-		}
-		host := ""
-		if len(pos) > 0 {
-			host = pos[0]
-		}
-		if *remove {
-			if err := client.Apps.Network().CustomDomain().Remove(ctx, id); err != nil {
-				return nil, err
-			}
-			return nil, nil
-		}
-		if host == "" {
-			return nil, errors.New("domain requires a hostname")
-		}
-		return client.Apps.Network().CustomDomain().Set(ctx, id, host)
 	case "subdomain":
 		f := fs("app network subdomain")
 		app := f.String("app", "", "app id")
@@ -1161,6 +1161,209 @@ func network(ctx context.Context, client *vertracloud.Client, args []string) (an
 	default:
 		return nil, fmt.Errorf("unknown network command %q", args[0])
 	}
+}
+
+func domains(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
+	if len(args) == 0 {
+		return nil, errors.New("missing domains command")
+	}
+	switch strings.ToLower(args[0]) {
+	case "list", "ls":
+		f := fs("app domains list")
+		app := f.String("app", "", "app id")
+		pos, err := parse(f, args[1:], map[string]bool{"--app": true}, nil)
+		if err != nil {
+			return nil, err
+		}
+		if *app == "" && len(pos) == 1 {
+			*app, pos = pos[0], nil
+		}
+		if len(pos) != 0 {
+			return nil, fmt.Errorf("unexpected arguments: %s", strings.Join(pos, " "))
+		}
+		id, err := resolveAppID(ctx, client, *app, "app domains list")
+		if err != nil {
+			return nil, err
+		}
+		return client.Apps.Domains().List(ctx, id)
+	case "add":
+		f := fs("app domains add")
+		app := f.String("app", "", "app id")
+		port := f.Int("port", 0, "port of the app that serves the domain")
+		prefix := f.String("path-prefix", "", "literal path added to every request")
+		redirectTo := f.String("redirect-to", "", "domain id or hostname to redirect to")
+		redirectStatus := f.Int("redirect-status", 0, "redirect status: 301, 302, 307 or 308")
+		noWWW := f.Bool("no-www", false, "do not create the automatic www/root companion")
+		pos, err := parse(f, args[1:], domainValueFlags, map[string]bool{"--no-www": true})
+		if err != nil {
+			return nil, err
+		}
+		if len(pos) != 1 {
+			return nil, errors.New("domains add requires a hostname")
+		}
+		set := visitedFlags(f)
+		if err := validateDomainFlags(set, *port, *redirectStatus); err != nil {
+			return nil, err
+		}
+		id, err := resolveAppID(ctx, client, *app, "app domains add")
+		if err != nil {
+			return nil, err
+		}
+		body := vertracloud.ApplicationDomainAddBody{Hostname: pos[0], Port: *port, PathPrefix: *prefix, RedirectStatus: vertracloud.ApplicationDomainRedirectStatus(*redirectStatus)}
+		if *noWWW {
+			off := false
+			body.WWW = &off
+		}
+		if *redirectTo != "" {
+			if body.RedirectTo, err = resolveDomainID(ctx, client, id, *redirectTo); err != nil {
+				return nil, err
+			}
+		}
+		return client.Apps.Domains().Add(ctx, id, body)
+	case "update":
+		f := fs("app domains update")
+		app := f.String("app", "", "app id")
+		port := f.Int("port", 0, "port of the app that serves the domain")
+		prefix := f.String("path-prefix", "", "literal path added to every request; empty clears it")
+		redirectTo := f.String("redirect-to", "", "domain id or hostname to redirect to; empty clears it")
+		redirectStatus := f.Int("redirect-status", 0, "redirect status: 301, 302, 307 or 308")
+		primary := f.Bool("primary", false, "make this domain the main one instead of its companion")
+		pos, err := parse(f, args[1:], domainValueFlags, map[string]bool{"--primary": true})
+		if err != nil {
+			return nil, err
+		}
+		if len(pos) != 1 {
+			return nil, errors.New("domains update requires a domain id or hostname")
+		}
+		set := visitedFlags(f)
+		if len(set) == 0 || (len(set) == 1 && set["app"]) {
+			return nil, errors.New("domains update requires at least one of --port, --path-prefix, --redirect-to, --redirect-status or --primary")
+		}
+		if err := validateDomainFlags(set, *port, *redirectStatus); err != nil {
+			return nil, err
+		}
+		id, err := resolveAppID(ctx, client, *app, "app domains update")
+		if err != nil {
+			return nil, err
+		}
+		domainID, err := resolveDomainID(ctx, client, id, pos[0])
+		if err != nil {
+			return nil, err
+		}
+		body := vertracloud.ApplicationDomainUpdateBody{Primary: *primary}
+		if set["port"] {
+			body.Port = port
+		}
+		if set["path-prefix"] {
+			body.PathPrefix = nullableString(*prefix)
+		}
+		if set["redirect-to"] {
+			target := *redirectTo
+			if target != "" {
+				if target, err = resolveDomainID(ctx, client, id, target); err != nil {
+					return nil, err
+				}
+			}
+			body.RedirectTo = nullableString(target)
+		}
+		if set["redirect-status"] {
+			body.RedirectStatus = vertracloud.ApplicationDomainRedirectStatus(*redirectStatus)
+		}
+		return client.Apps.Domains().Update(ctx, id, domainID, body)
+	case "remove", "rm", "delete":
+		f := fs("app domains remove")
+		app := f.String("app", "", "app id")
+		yes := f.Bool("yes", false, "skip confirmation")
+		pos, err := parse(f, args[1:], map[string]bool{"--app": true}, map[string]bool{"--yes": true, "-y": true})
+		if err != nil {
+			return nil, err
+		}
+		if len(pos) != 1 {
+			return nil, errors.New("domains remove requires a domain id or hostname")
+		}
+		id, err := resolveAppID(ctx, client, *app, "app domains remove")
+		if err != nil {
+			return nil, err
+		}
+		domainID, err := resolveDomainID(ctx, client, id, pos[0])
+		if err != nil {
+			return nil, err
+		}
+		if !*yes {
+			ok, e := confirm(os.Stdin, fmt.Sprintf("Remove domain %s? [y/N] ", pos[0]))
+			if e != nil || !ok {
+				return nil, e
+			}
+		}
+		if err := client.Apps.Domains().Remove(ctx, id, domainID); err != nil {
+			return nil, err
+		}
+		return map[string]string{"id": domainID}, nil
+	case "dns":
+		f := fs("app domains dns")
+		app := f.String("app", "", "app id")
+		pos, err := parse(f, args[1:], map[string]bool{"--app": true}, nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(pos) != 1 {
+			return nil, errors.New("domains dns requires a domain id or hostname")
+		}
+		id, err := resolveAppID(ctx, client, *app, "app domains dns")
+		if err != nil {
+			return nil, err
+		}
+		domainID, err := resolveDomainID(ctx, client, id, pos[0])
+		if err != nil {
+			return nil, err
+		}
+		return client.Apps.Domains().DNS(ctx, id, domainID)
+	default:
+		return nil, fmt.Errorf("unknown domains command %q", args[0])
+	}
+}
+
+var domainValueFlags = map[string]bool{"--app": true, "--port": true, "--path-prefix": true, "--redirect-to": true, "--redirect-status": true}
+
+func visitedFlags(f *flag.FlagSet) map[string]bool {
+	set := map[string]bool{}
+	f.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+	return set
+}
+
+func validateDomainFlags(set map[string]bool, port, redirectStatus int) error {
+	if set["port"] && (port < 1 || port > 65535) {
+		return errors.New("--port must be between 1 and 65535")
+	}
+	if set["redirect-status"] {
+		switch redirectStatus {
+		case 301, 302, 307, 308:
+		default:
+			return errors.New("--redirect-status must be 301, 302, 307 or 308")
+		}
+	}
+	return nil
+}
+
+func nullableString(value string) *vertracloud.Nullable[string] {
+	if value == "" {
+		return vertracloud.NullableNull[string]()
+	}
+	return vertracloud.NullableValue(value)
+}
+
+// resolveDomainID accepts a domain id or a hostname of the app.
+func resolveDomainID(ctx context.Context, client *vertracloud.Client, appID, ref string) (string, error) {
+	list, err := client.Apps.Domains().List(ctx, appID)
+	if err != nil {
+		return "", err
+	}
+	for _, d := range list {
+		if d.ID == ref || strings.EqualFold(d.Hostname, ref) {
+			return d.ID, nil
+		}
+	}
+	return "", fmt.Errorf("domain %q not found in this app", ref)
 }
 
 func destructiveNetwork(ctx context.Context, client *vertracloud.Client, args []string, purge bool) (any, error) {

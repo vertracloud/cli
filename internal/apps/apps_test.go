@@ -266,6 +266,7 @@ type fakeApps struct {
 	stream      *vertracloud.ApplicationRealtimeEventStream
 	files       fakeFiles
 	releases    fakeReleases
+	domains     fakeDomains
 	configBody  *vertracloud.ApplicationUpdateConfigBody
 	configErr   error
 	live        []vertracloud.ApplicationStatusShort
@@ -335,6 +336,7 @@ func (f *fakeApps) Delete(_ context.Context, id string, _ ...rest.RequestOpt) er
 }
 func (f *fakeApps) Deploys() vertracloud.AppsDeploysService   { return fakeDeploys{} }
 func (f *fakeApps) Network() vertracloud.AppsNetworkService   { return fakeNetwork{} }
+func (f *fakeApps) Domains() vertracloud.AppsDomainsService   { return &f.domains }
 func (f *fakeApps) Envs() vertracloud.AppsEnvsService         { return fakeEnvs{} }
 func (f *fakeApps) Releases() vertracloud.AppsReleasesService { return &f.releases }
 func (f *fakeApps) Files() vertracloud.AppsFilesService       { return &f.files }
@@ -358,9 +360,6 @@ func (fakeWebhook) Delete(context.Context, string, ...rest.RequestOpt) error { r
 
 type fakeNetwork struct{}
 
-func (fakeNetwork) DNS(context.Context, string, ...rest.RequestOpt) ([]vertracloud.ApplicationDNSRecord, error) {
-	return nil, nil
-}
 func (fakeNetwork) PurgeCache(context.Context, string, *vertracloud.ApplicationPurgeCacheBody, ...rest.RequestOpt) error {
 	return nil
 }
@@ -373,19 +372,170 @@ func (fakeNetwork) Publish(context.Context, string, string, ...rest.RequestOpt) 
 func (fakeNetwork) Unpublish(context.Context, string, ...rest.RequestOpt) (vertracloud.ApplicationWebPublish, error) {
 	return vertracloud.ApplicationWebPublish{}, nil
 }
-func (fakeNetwork) CustomDomain() vertracloud.AppsNetworkCustomDomainService {
-	return fakeCustomDomain{}
+
+type fakeDomains struct {
+	existing []vertracloud.ApplicationDomain
+	added    *vertracloud.ApplicationDomainAddBody
+	updated  *vertracloud.ApplicationDomainUpdateBody
+	updateID string
+	removed  string
+	dnsID    string
+	appID    string
 }
 
-type fakeCustomDomain struct{}
+func (f *fakeDomains) List(_ context.Context, id string, _ ...rest.RequestOpt) ([]vertracloud.ApplicationDomain, error) {
+	f.appID = id
+	return f.existing, nil
+}
+func (f *fakeDomains) Add(_ context.Context, id string, body vertracloud.ApplicationDomainAddBody, _ ...rest.RequestOpt) ([]vertracloud.ApplicationDomain, error) {
+	f.appID, f.added = id, &body
+	return f.existing, nil
+}
+func (f *fakeDomains) Update(_ context.Context, id, domainID string, body vertracloud.ApplicationDomainUpdateBody, _ ...rest.RequestOpt) ([]vertracloud.ApplicationDomain, error) {
+	f.appID, f.updateID, f.updated = id, domainID, &body
+	return f.existing, nil
+}
+func (f *fakeDomains) Remove(_ context.Context, id, domainID string, _ ...rest.RequestOpt) error {
+	f.appID, f.removed = id, domainID
+	return nil
+}
+func (f *fakeDomains) DNS(_ context.Context, id, domainID string, _ ...rest.RequestOpt) ([]vertracloud.ApplicationDomainDNSRecord, error) {
+	f.appID, f.dnsID = id, domainID
+	return []vertracloud.ApplicationDomainDNSRecord{{Type: vertracloud.ApplicationDomainDNSRecordTypeCNAME, Name: "x.com"}}, nil
+}
+func (f *fakeDomains) Connect(context.Context, string, string, ...rest.RequestOpt) (vertracloud.ApplicationDomainConnect, error) {
+	return vertracloud.ApplicationDomainConnect{}, nil
+}
 
-func (fakeCustomDomain) Get(context.Context, string, ...rest.RequestOpt) (vertracloud.ApplicationCustomDomainResponse, error) {
-	return vertracloud.ApplicationCustomDomainResponse{}, nil
+func domainsClient(existing ...vertracloud.ApplicationDomain) (*vertracloud.Client, *fakeDomains) {
+	apps := &fakeApps{}
+	apps.domains.existing = existing
+	return &vertracloud.Client{Apps: apps}, &apps.domains
 }
-func (fakeCustomDomain) Set(context.Context, string, string, ...rest.RequestOpt) (vertracloud.ApplicationCustomDomainResponse, error) {
-	return vertracloud.ApplicationCustomDomainResponse{}, nil
+
+func TestDomainsAddSendsFlags(t *testing.T) {
+	client, domains := domainsClient()
+	_, err := Run(context.Background(), client, "domains", []string{"add", "example.com", "--app", "app-1", "--port", "3000", "--path-prefix", "/api", "--redirect-status", "302", "--no-www"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	no := false
+	want := vertracloud.ApplicationDomainAddBody{Hostname: "example.com", WWW: &no, Port: 3000, PathPrefix: "/api", RedirectStatus: vertracloud.ApplicationDomainRedirectStatusFound}
+	if domains.appID != "app-1" || !reflect.DeepEqual(*domains.added, want) {
+		t.Fatalf("app=%q body=%#v", domains.appID, domains.added)
+	}
 }
-func (fakeCustomDomain) Remove(context.Context, string, ...rest.RequestOpt) error { return nil }
+
+func TestDomainsAddDefaultsKeepWWWUnset(t *testing.T) {
+	client, domains := domainsClient()
+	if _, err := Run(context.Background(), client, "domains", []string{"add", "example.com", "--app", "app-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(*domains.added, vertracloud.ApplicationDomainAddBody{Hostname: "example.com"}) {
+		t.Fatalf("body = %#v", domains.added)
+	}
+}
+
+func TestDomainsAddResolvesRedirectTargetByHostname(t *testing.T) {
+	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "main.com"})
+	if _, err := Run(context.Background(), client, "domains", []string{"add", "old.com", "--app", "app-1", "--redirect-to", "MAIN.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if domains.added.RedirectTo != "d1" {
+		t.Fatalf("redirect_to = %q, want d1", domains.added.RedirectTo)
+	}
+}
+
+func TestDomainsAddRequiresHostnameAndValidRanges(t *testing.T) {
+	client, _ := domainsClient()
+	for _, args := range [][]string{
+		{"add", "--app", "app-1"},
+		{"add", "x.com", "--app", "app-1", "--port", "0"},
+		{"add", "x.com", "--app", "app-1", "--port", "70000"},
+		{"add", "x.com", "--app", "app-1", "--redirect-status", "300"},
+	} {
+		if _, err := Run(context.Background(), client, "domains", args); err == nil {
+			t.Errorf("%v: expected error", args)
+		}
+	}
+}
+
+func TestDomainsUpdateSendsOnlySetFlags(t *testing.T) {
+	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"}, vertracloud.ApplicationDomain{ID: "d2", Hostname: "www.x.com"})
+	if _, err := Run(context.Background(), client, "domains", []string{"update", "www.x.com", "--app", "app-1", "--primary"}); err != nil {
+		t.Fatal(err)
+	}
+	if domains.updateID != "d2" || !reflect.DeepEqual(*domains.updated, vertracloud.ApplicationDomainUpdateBody{Primary: true}) {
+		t.Fatalf("id=%q body=%#v", domains.updateID, domains.updated)
+	}
+	if _, err := Run(context.Background(), client, "domains", []string{"update", "d1", "--app", "app-1", "--port", "8080", "--redirect-to", "d2"}); err != nil {
+		t.Fatal(err)
+	}
+	port := 8080
+	want := vertracloud.ApplicationDomainUpdateBody{Port: &port, RedirectTo: vertracloud.NullableValue("d2")}
+	if domains.updateID != "d1" || !reflect.DeepEqual(*domains.updated, want) {
+		t.Fatalf("id=%q body=%#v", domains.updateID, domains.updated)
+	}
+}
+
+func TestDomainsUpdateEmptyValueClears(t *testing.T) {
+	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
+	if _, err := Run(context.Background(), client, "domains", []string{"update", "d1", "--app", "app-1", "--path-prefix", "", "--redirect-to", ""}); err != nil {
+		t.Fatal(err)
+	}
+	want := vertracloud.ApplicationDomainUpdateBody{PathPrefix: vertracloud.NullableNull[string](), RedirectTo: vertracloud.NullableNull[string]()}
+	if !reflect.DeepEqual(*domains.updated, want) {
+		t.Fatalf("body = %#v", domains.updated)
+	}
+}
+
+func TestDomainsUpdateWithoutChangesFails(t *testing.T) {
+	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
+	if _, err := Run(context.Background(), client, "domains", []string{"update", "d1", "--app", "app-1"}); err == nil || domains.updated != nil {
+		t.Fatalf("err=%v updated=%v", err, domains.updated)
+	}
+}
+
+func TestDomainsRemoveYesAndDNSResolveByHostname(t *testing.T) {
+	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
+	got, err := Run(context.Background(), client, "domains", []string{"remove", "x.com", "--app", "app-1", "--yes"})
+	if err != nil || domains.removed != "d1" || !reflect.DeepEqual(got, map[string]string{"id": "d1"}) {
+		t.Fatalf("got=%#v err=%v removed=%q", got, err, domains.removed)
+	}
+	if _, err := Run(context.Background(), client, "domains", []string{"dns", "d1", "--app", "app-1"}); err != nil || domains.dnsID != "d1" {
+		t.Fatalf("err=%v dns=%q", err, domains.dnsID)
+	}
+}
+
+func TestDomainsUnknownReferenceFails(t *testing.T) {
+	client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
+	if _, err := Run(context.Background(), client, "domains", []string{"remove", "nope.com", "--app", "app-1", "--yes"}); err == nil || domains.removed != "" {
+		t.Fatalf("err=%v removed=%q", err, domains.removed)
+	}
+}
+
+func TestDomainsListAcceptsPositionalAppID(t *testing.T) {
+	client, domains := domainsClient()
+	if _, err := Run(context.Background(), client, "domains", []string{"list", "app-9"}); err != nil || domains.appID != "app-9" {
+		t.Fatalf("err=%v app=%q", err, domains.appID)
+	}
+}
+
+func TestListFilterDomainMatchesAnyDomainOrSubdomain(t *testing.T) {
+	sub := "demo.vertraweb.app"
+	app := vertracloud.Application{Subdomain: &sub, Domains: []vertracloud.ApplicationDomain{{Hostname: "shop.example.com"}, {Hostname: "www.shop.example.com"}}}
+	for _, value := range []string{"www.shop", "shop.example", "demo.vertraweb"} {
+		if !appMatches(app, "domain", value) {
+			t.Errorf("domain=%s should match", value)
+		}
+	}
+	if appMatches(app, "domain", "other.com") {
+		t.Error("domain=other.com should not match")
+	}
+	if !appMatchesFilter(app, "domain", "!=", "other.com") || appMatchesFilter(app, "domain", "!=", "shop.example.com") {
+		t.Error("domain!= should compare against every hostname")
+	}
+}
 
 type fakeEnvs struct{}
 

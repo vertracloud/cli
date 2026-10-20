@@ -199,7 +199,7 @@ func Normalize(command string) string {
 		action = "upload"
 	}
 	switch action {
-	case "env", "file", "network", "credentials", "member", "role", "invite":
+	case "env", "file", "network", "domains", "credentials", "member", "role", "invite":
 		if len(words) > 2 {
 			sub := words[2]
 			if canonical := map[string]string{"ls": "list", "remove": "delete", "rm": "delete", "unset": "delete", "mv": "move", "rename": "move"}[sub]; canonical != "" {
@@ -212,23 +212,24 @@ func Normalize(command string) string {
 }
 
 var listColumns = map[string][]string{
-	"projects":       {"name", "id", "kind", "status", "cpu", "ram", "runtime", "folder"},
-	"app list":       {"name", "id", "status", "cpu", "ram", "language", "domain", "folder"},
-	"db list":        {"name", "id", "type", "status", "cpu", "ram", "folder"},
-	"app status":     {"name", "id", "status", "cpu", "ram", "uptime"},
-	"db status":      {"name", "id", "status", "cpu", "ram", "storage", "uptime"},
-	"workspace list": {"name", "id", "members_count", "created_at"},
-	"snapshot list":  {"id", "resource_name", "size", "date"},
-	"folder list":    {"name", "id", "color", "resources"},
-	"favorite list":  {"resource_type", "resource_id", "created_at"},
-	"app env list":   {"key", "value", "note"},
-	"app file list":  {"name", "type", "last_modified"},
-	"app releases":   {"id", "source", "release_status", "author", "message", "created_at", "rollback", "expires_at"},
+	"projects":         {"name", "id", "kind", "status", "cpu", "ram", "runtime", "folder"},
+	"app list":         {"name", "id", "status", "cpu", "ram", "language", "domain", "folder"},
+	"db list":          {"name", "id", "type", "status", "cpu", "ram", "folder"},
+	"app status":       {"name", "id", "status", "cpu", "ram", "uptime"},
+	"db status":        {"name", "id", "status", "cpu", "ram", "storage", "uptime"},
+	"workspace list":   {"name", "id", "members_count", "created_at"},
+	"snapshot list":    {"id", "resource_name", "size", "date"},
+	"folder list":      {"name", "id", "color", "resources"},
+	"favorite list":    {"resource_type", "resource_id", "created_at"},
+	"app env list":     {"key", "value", "note"},
+	"app file list":    {"name", "type", "last_modified"},
+	"app domains list": {"hostname", "id", "status", "ssl_status", "port", "path_prefix", "redirect_to"},
+	"app releases":     {"id", "source", "release_status", "author", "message", "created_at", "rollback", "expires_at"},
 }
 
 // hidden fields are internal bookkeeping that only add noise for humans.
 var hidden = map[string]bool{
-	"owner_id": true, "owner_plan_id": true,
+	"owner_id": true, "owner_plan": true,
 	"deleted_at": true, "resource_organization": true, "position": true, "installing": true, "running": true,
 	"favorite": true, "user_id": true, "workspace_id": true, "cluster": true, "author_id": true, "is_owner": true, "folder_color": true, "ram_used": true, "ram_limit": true,
 }
@@ -354,7 +355,7 @@ func detail(w io.Writer, m map[string]any, kind, locale, indent string) {
 	var rows []row
 	for _, key := range orderedKeys(m, false) {
 		value, color := cell(m, key, kind, locale)
-		if value == "-" && key != "subdomain" && key != "custom_domain" {
+		if value == "-" && key != "subdomain" && key != "domains" {
 			continue
 		}
 		if color != nil {
@@ -374,7 +375,7 @@ func detail(w io.Writer, m map[string]any, kind, locale, indent string) {
 	}
 }
 
-var priority = []string{"name", "display_name", "email", "id", "status", "shield_cooldown", "plan", "type", "language", "version", "ram", "cpu", "storage", "network", "uptime", "subdomain", "custom_domain", "host", "port"}
+var priority = []string{"name", "display_name", "email", "id", "status", "shield_cooldown", "plan", "type", "language", "version", "ram", "cpu", "storage", "network", "uptime", "subdomain", "domains", "host", "port"}
 
 // orderedKeys puts identity and state first, the rest alphabetically and
 // timestamps last. Tables also skip nested values that do not fit a cell.
@@ -441,13 +442,26 @@ func cell(item map[string]any, key, kind, locale string) (string, func(string) s
 			return "■ " + s, func(v string) string { return color("■") + strings.TrimPrefix(v, "■") }
 		}
 	case "domain":
-		for _, field := range []string{"custom_domain", "subdomain"} {
-			if s, ok := item[field].(string); ok && s != "" {
-				return s, Cyan
+		hosts := domainHosts(item["domains"])
+		if len(hosts) > 0 {
+			label := hosts[0]
+			if len(hosts) > 1 {
+				label += fmt.Sprintf(" +%d", len(hosts)-1)
 			}
+			return label, Cyan
+		}
+		if s, ok := item["subdomain"].(string); ok && s != "" {
+			return s, Cyan
 		}
 		return "-", nil
-	case "subdomain", "custom_domain":
+	case "domains":
+		if hosts := domainHosts(value); len(hosts) > 0 {
+			return strings.Join(hosts, ", "), Cyan
+		}
+		return text(locale, "not_configured"), Dim
+	case "ssl_status":
+		return statusWord(map[string]any{"status": value}, locale)
+	case "subdomain":
 		if s, ok := value.(string); ok && s != "" {
 			return s, Cyan
 		}
@@ -552,6 +566,29 @@ func cell(item map[string]any, key, kind, locale string) (string, func(string) s
 		}
 	}
 	return plain(value, locale), nil
+}
+
+// domainHosts lists the hostnames of an app's domains, serving ones first and
+// automatic companions last.
+func domainHosts(value any) []string {
+	list, _ := value.([]any)
+	var main, companions []string
+	for _, entry := range list {
+		d, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		host, _ := d["hostname"].(string)
+		if host == "" {
+			continue
+		}
+		if d["companion_of"] != nil || d["redirect_to"] != nil {
+			companions = append(companions, host)
+		} else {
+			main = append(main, host)
+		}
+	}
+	return append(main, companions...)
 }
 
 func plain(value any, locale string) string {
@@ -667,6 +704,10 @@ func statusWord(item map[string]any, locale string) (string, func(string) string
 		return "○ " + text(locale, "offline"), Red
 	case "building":
 		return "● " + text(locale, "building"), Yellow
+	case "active":
+		return "● " + text(locale, "active"), Green
+	case "failed", "deleted":
+		return "● " + s, Red
 	case "":
 		return "-", nil
 	}
@@ -810,35 +851,38 @@ func mutation(cmd string) bool {
 	parts := strings.Fields(cmd)
 	switch parts[len(parts)-1] {
 	case "create", "update", "delete", "add", "start", "stop", "restart", "set", "write", "move", "publish",
-		"unpublish", "purge-cache", "domain", "subdomain", "reset", "restore", "upload", "commit", "config", "revoke", "accept", "rollback":
+		"unpublish", "purge-cache", "subdomain", "reset", "restore", "upload", "commit", "config", "revoke", "accept", "rollback":
 		return true
 	}
 	return false
 }
 
 var actionMessages = map[string][3]string{ // pt, en, es
-	"app start":        {"Aplicação iniciada.", "Application started.", "Aplicación iniciada."},
-	"app stop":         {"Aplicação parada.", "Application stopped.", "Aplicación detenida."},
-	"app restart":      {"Aplicação reiniciada.", "Application restarted.", "Aplicación reiniciada."},
-	"app delete":       {"Aplicação excluída.", "Application deleted.", "Aplicación eliminada."},
-	"app upload":       {"Aplicação enviada.", "Application uploaded.", "Aplicación subida."},
-	"app commit":       {"Arquivos enviados.", "Files uploaded.", "Archivos subidos."},
-	"app config":       {"Configuração atualizada.", "Configuration updated.", "Configuración actualizada."},
-	"app rollback":     {"Rollback iniciado. A aplicação está reiniciando.", "Rollback started. The application is restarting.", "Rollback iniciado. La aplicación se está reiniciando."},
-	"app download":     {"Download concluído.", "Download complete.", "Descarga completada."},
-	"app env set":      {"Variáveis salvas.", "Variables saved.", "Variables guardadas."},
-	"app env delete":   {"Variáveis removidas.", "Variables removed.", "Variables eliminadas."},
-	"db create":        {"Banco de dados criado.", "Database created.", "Base de datos creada."},
-	"db start":         {"Banco de dados iniciado.", "Database started.", "Base de datos iniciada."},
-	"db stop":          {"Banco de dados parado.", "Database stopped.", "Base de datos detenida."},
-	"db delete":        {"Banco de dados excluído.", "Database deleted.", "Base de datos eliminada."},
-	"db reset":         {"Banco de dados redefinido.", "Database reset.", "Base de datos restablecida."},
-	"snapshot create":  {"Snapshot criado.", "Snapshot created.", "Snapshot creado."},
-	"snapshot restore": {"Snapshot restaurado.", "Snapshot restored.", "Snapshot restaurado."},
-	"link":             {"Pasta vinculada à aplicação.", "Directory linked to the application.", "Carpeta vinculada a la aplicación."},
-	"unlink":           {"Vínculo removido.", "Link removed.", "Vínculo eliminado."},
-	"auth logout":      {"Sessão encerrada.", "Logged out.", "Sesión cerrada."},
-	"zip":              {"Arquivo compactado.", "Archive created.", "Archivo comprimido."},
+	"app start":          {"Aplicação iniciada.", "Application started.", "Aplicación iniciada."},
+	"app stop":           {"Aplicação parada.", "Application stopped.", "Aplicación detenida."},
+	"app restart":        {"Aplicação reiniciada.", "Application restarted.", "Aplicación reiniciada."},
+	"app delete":         {"Aplicação excluída.", "Application deleted.", "Aplicación eliminada."},
+	"app upload":         {"Aplicação enviada.", "Application uploaded.", "Aplicación subida."},
+	"app commit":         {"Arquivos enviados.", "Files uploaded.", "Archivos subidos."},
+	"app config":         {"Configuração atualizada.", "Configuration updated.", "Configuración actualizada."},
+	"app rollback":       {"Rollback iniciado. A aplicação está reiniciando.", "Rollback started. The application is restarting.", "Rollback iniciado. La aplicación se está reiniciando."},
+	"app download":       {"Download concluído.", "Download complete.", "Descarga completada."},
+	"app env set":        {"Variáveis salvas.", "Variables saved.", "Variables guardadas."},
+	"app domains add":    {"Domínio adicionado.", "Domain added.", "Dominio agregado."},
+	"app domains update": {"Domínio atualizado.", "Domain updated.", "Dominio actualizado."},
+	"app domains delete": {"Domínio removido.", "Domain removed.", "Dominio eliminado."},
+	"app env delete":     {"Variáveis removidas.", "Variables removed.", "Variables eliminadas."},
+	"db create":          {"Banco de dados criado.", "Database created.", "Base de datos creada."},
+	"db start":           {"Banco de dados iniciado.", "Database started.", "Base de datos iniciada."},
+	"db stop":            {"Banco de dados parado.", "Database stopped.", "Base de datos detenida."},
+	"db delete":          {"Banco de dados excluído.", "Database deleted.", "Base de datos eliminada."},
+	"db reset":           {"Banco de dados redefinido.", "Database reset.", "Base de datos restablecida."},
+	"snapshot create":    {"Snapshot criado.", "Snapshot created.", "Snapshot creado."},
+	"snapshot restore":   {"Snapshot restaurado.", "Snapshot restored.", "Snapshot restaurado."},
+	"link":               {"Pasta vinculada à aplicação.", "Directory linked to the application.", "Carpeta vinculada a la aplicación."},
+	"unlink":             {"Vínculo removido.", "Link removed.", "Vínculo eliminado."},
+	"auth logout":        {"Sessão encerrada.", "Logged out.", "Sesión cerrada."},
+	"zip":                {"Arquivo compactado.", "Archive created.", "Archivo comprimido."},
 }
 
 func actionMessage(cmd, locale string) string {
@@ -907,7 +951,7 @@ var translations = map[string]map[string]string{
 		"empty": "Nenhum resultado.", "status": "Estado", "id": "ID", "name": "Nome", "created_at": "Criado em", "updated_at": "Atualizado em",
 		"last_snapshot": "Último snapshot", "offline_since": "Offline desde", "cpu": "CPU", "ram": "Memória", "storage": "Armazenamento",
 		"language": "Linguagem", "type": "Tipo", "description": "Descrição", "domain": "Domínio", "subdomain": "Subdomínio",
-		"custom_domain": "Domínio personalizado", "applications": "Aplicações", "databases": "Bancos de dados",
+		"domains": "Domínios", "hostname": "Domínio", "ssl_status": "SSL", "path_prefix": "Prefixo", "redirect_to": "Redireciona para", "active": "ativo", "applications": "Aplicações", "databases": "Bancos de dados",
 		"email": "E-mail", "locale": "Idioma", "current": "Atual", "available": "Disponíveis", "ok": "Concluído.", "file": "Arquivo",
 		"folder": "Pasta", "not_configured": "Não configurado", "website": "Site", "bot": "Bot",
 		"yes": "Sim", "no": "Não", "online": "online", "offline": "offline", "installing": "instalando", "building": "construindo", "uptime": "Tempo ativo",
@@ -954,7 +998,7 @@ var translations = map[string]map[string]string{
 		"empty": "No hay resultados.", "status": "Estado", "id": "ID", "name": "Nombre", "created_at": "Creado", "updated_at": "Actualizado",
 		"last_snapshot": "Última instantánea", "offline_since": "Sin conexión desde", "cpu": "CPU", "ram": "Memoria", "storage": "Almacenamiento",
 		"language": "Lenguaje", "type": "Tipo", "description": "Descripción", "domain": "Dominio", "subdomain": "Subdominio",
-		"custom_domain": "Dominio personalizado", "applications": "Aplicaciones", "databases": "Bases de datos",
+		"domains": "Dominios", "hostname": "Dominio", "ssl_status": "SSL", "path_prefix": "Prefijo", "redirect_to": "Redirige a", "active": "activo", "applications": "Aplicaciones", "databases": "Bases de datos",
 		"email": "Correo", "locale": "Idioma", "current": "Actual", "available": "Disponibles", "ok": "Completado.", "file": "Archivo",
 		"folder": "Carpeta", "not_configured": "No configurado", "website": "Sitio web", "bot": "Bot",
 		"yes": "Sí", "no": "No", "online": "activa", "offline": "apagada", "installing": "instalando", "building": "construyendo", "uptime": "Tiempo activo",
@@ -1001,7 +1045,7 @@ var translations = map[string]map[string]string{
 		"empty": "No results.", "status": "Status", "id": "ID", "name": "Name", "created_at": "Created", "updated_at": "Updated",
 		"last_snapshot": "Last snapshot", "offline_since": "Offline since", "cpu": "CPU", "ram": "Memory", "storage": "Storage",
 		"language": "Language", "type": "Type", "description": "Description", "domain": "Domain", "subdomain": "Subdomain",
-		"custom_domain": "Custom domain", "applications": "Applications", "databases": "Databases",
+		"domains": "Domains", "hostname": "Domain", "ssl_status": "SSL", "path_prefix": "Prefix", "redirect_to": "Redirects to", "active": "active", "applications": "Applications", "databases": "Databases",
 		"email": "Email", "locale": "Language", "current": "Current", "available": "Available", "ok": "Done.", "file": "File",
 		"folder": "Folder", "not_configured": "Not configured", "website": "Website", "bot": "Bot",
 		"yes": "Yes", "no": "No", "online": "online", "offline": "offline", "installing": "installing", "building": "building", "uptime": "Uptime",

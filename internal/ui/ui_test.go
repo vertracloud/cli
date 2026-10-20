@@ -83,7 +83,7 @@ func TestAppListRendersOnlyUsefulColumns(t *testing.T) {
 	var out bytes.Buffer
 	RenderPaged(&out, []any{map[string]any{
 		"name": "demo", "id": "app-1", "ram": 512, "status": "down", "language": "go",
-		"subdomain": "demo.vertraweb.app", "custom_domain": nil, "owner_id": "private-owner",
+		"subdomain": "demo.vertraweb.app", "domains": []any{}, "owner_id": "private-owner", "owner_plan": "pro",
 		"created_at": "2026-09-22T12:00:00Z", "start_command": nil,
 	}}, "app list", "pt", 5, false)
 	got := out.String()
@@ -92,7 +92,7 @@ func TestAppListRendersOnlyUsefulColumns(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
 	}
-	for _, unwanted := range []string{"OWNER", "private-owner", "CRIADO", "START", "<nil>", "map["} {
+	for _, unwanted := range []string{"OWNER", "private-owner", "PLAN", "CRIADO", "START", "<nil>", "map["} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("unexpected %q in:\n%s", unwanted, got)
 		}
@@ -110,14 +110,14 @@ func TestDatabaseListUsesReadableTypeAndMemory(t *testing.T) {
 
 func TestAppInfoOmitsInactiveFeaturesAndFormatsMemoryAndSubdomain(t *testing.T) {
 	var out bytes.Buffer
-	Render(&out, map[string]any{"name": "next-build", "ram": float64(612), "subdomain": nil, "custom_domain": nil, "shield_cooldown": nil}, "app info", "pt")
+	Render(&out, map[string]any{"name": "next-build", "ram": float64(612), "subdomain": nil, "domains": []any{}, "owner_plan": "pro", "shield_cooldown": nil}, "app info", "pt")
 	got := out.String()
-	for _, want := range []string{"612 MB", "Não configurado", "Domínio personalizado"} {
+	for _, want := range []string{"612 MB", "Não configurado", "Domínios"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
 	}
-	for _, unwanted := range []string{"shield_cooldown", "<nil>"} {
+	for _, unwanted := range []string{"shield_cooldown", "<nil>", "owner_plan", "Owner plan"} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("unexpected %q in:\n%s", unwanted, got)
 		}
@@ -278,6 +278,66 @@ func TestStatusWordBuildingIsLocalized(t *testing.T) {
 		got, _ := statusWord(map[string]any{"status": "building"}, locale)
 		if !strings.Contains(got, want) {
 			t.Fatalf("%s: %q lacks %q", locale, got, want)
+		}
+	}
+}
+
+func domainRow(hostname, status string, extra map[string]any) map[string]any {
+	row := map[string]any{"id": "d-" + hostname, "hostname": hostname, "status": status, "ssl_status": "pending", "port": float64(80), "path_prefix": nil, "redirect_to": nil, "companion_of": nil, "apex": false, "redirect_status": float64(308), "created_at": "2026-10-20T12:00:00Z"}
+	for k, v := range extra {
+		row[k] = v
+	}
+	return row
+}
+
+func TestAppListShowsPrimaryDomainAndCountsTheRest(t *testing.T) {
+	var out bytes.Buffer
+	RenderPaged(&out, []any{map[string]any{
+		"name": "demo", "id": "app-1", "ram": 512, "status": "up", "subdomain": "demo.vertraweb.app",
+		"domains": []any{
+			domainRow("www.shop.com", "active", map[string]any{"companion_of": "d-shop.com", "redirect_to": "d-shop.com"}),
+			domainRow("shop.com", "active", nil),
+			domainRow("api.shop.com", "pending", nil),
+		},
+	}}, "app list", "pt", 5, false)
+	got := out.String()
+	if !strings.Contains(got, "shop.com") || !strings.Contains(got, "+2") || strings.Contains(got, "demo.vertraweb.app") {
+		t.Fatalf("domain column:\n%s", got)
+	}
+}
+
+func TestAppInfoListsEveryDomain(t *testing.T) {
+	var out bytes.Buffer
+	Render(&out, map[string]any{"name": "demo", "domains": []any{domainRow("shop.com", "active", nil), domainRow("www.shop.com", "active", map[string]any{"companion_of": "d-shop.com"})}}, "app info", "en")
+	got := out.String()
+	if !strings.Contains(got, "Domains") || !strings.Contains(got, "shop.com, www.shop.com") {
+		t.Fatalf("info output:\n%s", got)
+	}
+}
+
+func TestDomainsListRendersStatusAndPort(t *testing.T) {
+	var out bytes.Buffer
+	RenderPaged(&out, []any{domainRow("shop.com", "active", map[string]any{"ssl_status": "active", "port": float64(3000), "path_prefix": "/api"}), domainRow("old.com", "moved", nil)}, "app domains list", "pt", 5, false)
+	got := out.String()
+	for _, want := range []string{"DOMÍNIO", "SSL", "PORTA", "shop.com", "3000", "/api", "old.com", "moved"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"map[", "<nil>", "apex", "companion"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("unexpected %q in:\n%s", unwanted, got)
+		}
+	}
+}
+
+func TestNormalizeDomainsCommands(t *testing.T) {
+	for in, want := range map[string]string{
+		"app domains list": "app domains list", "apps domains ls x": "app domains list", "app domains add a.com --app x": "app domains add",
+		"app domains remove a.com": "app domains delete", "app domains dns a.com": "app domains dns",
+	} {
+		if got := Normalize(in); got != want {
+			t.Errorf("Normalize(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
