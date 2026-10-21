@@ -48,7 +48,7 @@ func RunWithOptions(ctx context.Context, client *vertracloud.Client, command str
 	case "restart":
 		return restart(ctx, client, args)
 	case "stop":
-		return oneID(ctx, client, args, "app stop", func(id string) (any, error) { return client.Apps.Stop(ctx, id) })
+		return oneID(ctx, client, withoutYes(args), "app stop", func(id string) (any, error) { return client.Apps.Stop(ctx, id) })
 	case "delete", "remove":
 		return remove(ctx, client, args)
 	case "download":
@@ -955,7 +955,7 @@ func env(ctx context.Context, client *vertracloud.Client, args []string) (any, e
 	case "remove", "delete", "unset":
 		f := fs("app env remove")
 		app := f.String("app", "", "app id")
-		pos, err := parse(f, args[1:], map[string]bool{"--app": true}, nil)
+		pos, err := parse(f, withoutYes(args[1:]), map[string]bool{"--app": true}, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1457,6 +1457,16 @@ func spin(jsonMode bool, action string) func() {
 		"commit": {"pt": "Compactando e enviando os arquivos…", "en": "Packing and uploading files…", "es": "Comprimiendo y subiendo los archivos…"},
 	}
 	return ui.Spin(labels[action][ui.Locale])
+}
+
+func withoutYes(args []string) []string {
+	kept := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg != "--yes" && arg != "-y" {
+			kept = append(kept, arg)
+		}
+	}
+	return kept
 }
 
 func projectID() string {

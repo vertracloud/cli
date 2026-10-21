@@ -300,3 +300,100 @@ func TestFailStripsEscapesFromServerMessage(t *testing.T) {
 		t.Fatalf("got %q", out.String())
 	}
 }
+
+func TestLifecycleConfirmationMatrix(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want map[string]string
+	}{
+		{[]string{"app", "stop", "app-1"}, map[string]string{"en": "Stop application app-1?", "pt": "Parar aplicação app-1?", "es": "¿Detener aplicación app-1?"}},
+		{[]string{"apps", "stop", "app-1"}, map[string]string{"en": "Stop application app-1?"}},
+		{[]string{"app", "STOP", "app-1"}, map[string]string{"en": "Stop application app-1?"}},
+		{[]string{"db", "stop", "db-1"}, map[string]string{"en": "Stop database db-1?", "pt": "Parar banco de dados db-1?", "es": "¿Detener base de datos db-1?"}},
+		{[]string{"database", "stop", "db-1"}, map[string]string{"en": "Stop database db-1?"}},
+		{[]string{"app", "env", "remove", "--app", "app-1", "KEY"}, map[string]string{"en": "Remove variable KEY from application app-1?", "pt": "Remover variável KEY da aplicação app-1?", "es": "¿Eliminar variable KEY de la aplicación app-1?"}},
+		{[]string{"apps", "env", "delete", "--app=app-1", "A", "B"}, map[string]string{"en": "Remove variable A, B from application app-1?"}},
+		{[]string{"app", "env", "unset", "--app", "app-1", "KEY"}, map[string]string{"en": "Remove variable KEY from application app-1?"}},
+	} {
+		for locale, want := range tc.want {
+			ok, label := destructivePath(tc.args, locale)
+			if !ok || label != want {
+				t.Errorf("%v [%s]: ok=%v label=%q, want %q", tc.args, locale, ok, label, want)
+			}
+		}
+	}
+	for _, args := range [][]string{
+		{"app", "start", "app-1"},
+		{"app", "restart", "app-1"},
+		{"db", "start", "db-1"},
+		{"app", "env", "set", "--app", "app-1", "K=V"},
+		{"app", "env", "list", "--app", "app-1"},
+	} {
+		if ok, _ := destructivePath(args, "en"); ok {
+			t.Errorf("destructivePath(%v) should not prompt", args)
+		}
+	}
+}
+
+var lifecycleCommands = [][]string{
+	{"app", "stop", "app-1"},
+	{"apps", "stop", "app-1"},
+	{"db", "stop", "db-1"},
+	{"database", "stop", "db-1"},
+	{"app", "env", "remove", "--app", "app-1", "KEY"},
+	{"app", "env", "delete", "--app", "app-1", "KEY"},
+	{"app", "env", "unset", "--app", "app-1", "KEY"},
+}
+
+func TestLifecycleCommandsAreGatedBeforeNetwork(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VERTRA_API_KEY", "dummy")
+	for _, args := range lifecycleCommands {
+		var out, errOut bytes.Buffer
+		if code := run(context.Background(), append([]string{"--json"}, args...), &out, &errOut); code != 1 {
+			t.Fatalf("%v: exit=%d", args, code)
+		}
+		if out.Len() != 0 || !strings.Contains(errOut.String(), `"code":"CONFIRMATION_REQUIRED"`) {
+			t.Fatalf("%v: stdout=%q stderr=%q", args, out.String(), errOut.String())
+		}
+	}
+	interactive, askConfirm = func() bool { return true }, func(string) (bool, error) { return false, nil }
+	t.Cleanup(func() { interactive, askConfirm = ui.IsInteractive, ui.Confirm })
+	for _, args := range lifecycleCommands {
+		var out, errOut bytes.Buffer
+		code := run(context.Background(), args, &out, &errOut)
+		if code != exitCancelled || out.Len() != 0 || !strings.Contains(errOut.String(), "Operation cancelled.") {
+			t.Errorf("%v: exit=%d stdout=%q stderr=%q", args, code, out.String(), errOut.String())
+		}
+	}
+}
+
+func TestLifecycleCommandsRunWithYes(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"response":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"response":{}}`))
+	}))
+	defer server.Close()
+	oldURL := apiBaseURL
+	apiBaseURL = server.URL
+	defer func() { apiBaseURL = oldURL }()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VERTRA_API_KEY", "dummy")
+	for _, args := range lifecycleCommands {
+		for _, yes := range []string{"--yes", "-y"} {
+			requests = nil
+			var out, errOut bytes.Buffer
+			if code := run(context.Background(), append(append([]string{}, args...), yes), &out, &errOut); code != 0 {
+				t.Fatalf("%v %s: exit=%d stderr=%q", args, yes, code, errOut.String())
+			}
+			if len(requests) == 0 {
+				t.Errorf("%v %s: no request reached the API", args, yes)
+			}
+		}
+	}
+}

@@ -741,11 +741,19 @@ func destructivePath(args []string, locale string) (bool, string) {
 	if len(args) < 2 {
 		return false, ""
 	}
-	group, action := args[0], args[1]
+	group, action := strings.ToLower(args[0]), strings.ToLower(args[1])
 	if group == "apps" {
 		group = "app"
 	}
+	if group == "database" {
+		group = "db"
+	}
 	index := 2
+	if group == "app" && action == "env" && len(args) > 2 {
+		if sub := strings.ToLower(args[2]); sub == "remove" || sub == "delete" || sub == "unset" {
+			action, index = "env remove", 3
+		}
+	}
 	if group == "app" && action == "file" && len(args) > 2 {
 		action = "file " + args[2]
 		index = 3
@@ -771,10 +779,14 @@ func destructivePath(args []string, locale string) (bool, string) {
 		"db delete": true, "db reset": true, "db credentials reset": true,
 		"workspace delete": true, "workspace invite revoke": true, "workspace invite decline": true, "workspace role delete": true, "workspace member remove": true,
 		"snapshot restore": true, "folder delete": true, "blob rm": true,
+		"app stop": true, "db stop": true, "app env remove": true,
 	}
 	path := group + " " + action
 	if !allowed[path] {
 		return false, ""
+	}
+	if path == "app stop" || path == "db stop" || path == "app env remove" {
+		return true, lifecycleLabel(path, args[index:], locale)
 	}
 	label := map[string]map[string]string{
 		"pt": {"app delete": "Excluir aplicação " + strings.Join(args[index:], " ") + "?", "app file delete": "Excluir arquivo " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Despublicar aplicação?", "app domains remove": "Remover domínio " + strings.Join(args[index:], " ") + "?", "app network purge-cache": "Limpar o cache da CDN?", "db delete": "Excluir banco de dados?", "db reset": "Redefinir banco de dados?", "db credentials reset": "Redefinir credenciais?", "workspace delete": "Excluir workspace?", "workspace invite revoke": "Revogar convite?", "workspace invite decline": "Recusar convite?", "workspace role delete": "Excluir função?", "workspace member remove": "Remover membro?", "snapshot restore": "Restaurar snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Excluir pasta " + strings.Join(args[index:], " ") + "?", "blob rm": "Excluir arquivos do Blob?"},
@@ -782,6 +794,59 @@ func destructivePath(args []string, locale string) (bool, string) {
 		"en": {"app delete": "Delete application " + strings.Join(args[index:], " ") + "?", "app file delete": "Delete file " + strings.Join(args[index:], " ") + "?", "app network unpublish": "Unpublish application?", "app domains remove": "Remove domain " + strings.Join(args[index:], " ") + "?", "app network purge-cache": "Purge CDN cache?", "db delete": "Delete database?", "db reset": "Reset database?", "db credentials reset": "Reset database credentials?", "workspace delete": "Delete workspace?", "workspace invite revoke": "Revoke invitation?", "workspace invite decline": "Decline invitation?", "workspace role delete": "Delete role?", "workspace member remove": "Remove member?", "snapshot restore": "Restore snapshot " + strings.Join(args[index:], " ") + "?", "folder delete": "Delete folder " + strings.Join(args[index:], " ") + "?", "blob rm": "Delete Blob Storage files?"},
 	}[locale][path]
 	return true, label
+}
+
+func lifecycleLabel(path string, rest []string, locale string) string {
+	var target string
+	var keys []string
+	for i := 0; i < len(rest); i++ {
+		arg := rest[i]
+		switch {
+		case arg == "--yes" || arg == "-y":
+		case arg == "--app" && i+1 < len(rest):
+			i++
+			target = rest[i]
+		case strings.HasPrefix(arg, "--app="):
+			target = strings.TrimPrefix(arg, "--app=")
+		default:
+			keys = append(keys, arg)
+		}
+	}
+	if path != "app env remove" {
+		if len(keys) > 0 {
+			target = keys[0]
+		}
+	} else if target == "" && len(keys) > 1 && !linkedProject() {
+		target, keys = keys[0], keys[1:]
+	}
+	withTarget := func(format string) string {
+		if target == "" {
+			return strings.Replace(format, " %s", "", 1)
+		}
+		return fmt.Sprintf(format, target)
+	}
+	switch path {
+	case "app stop":
+		return withTarget(map[string]string{"pt": "Parar aplicação %s?", "es": "¿Detener aplicación %s?", "en": "Stop application %s?"}[locale])
+	case "db stop":
+		return withTarget(map[string]string{"pt": "Parar banco de dados %s?", "es": "¿Detener base de datos %s?", "en": "Stop database %s?"}[locale])
+	}
+	names := strings.Join(keys, ", ")
+	format := map[string]string{"pt": "Remover variável %s da aplicação %s?", "es": "¿Eliminar variable %s de la aplicación %s?", "en": "Remove variable %s from application %s?"}[locale]
+	if target == "" {
+		format = map[string]string{"pt": "Remover variável %s da aplicação vinculada?", "es": "¿Eliminar variable %s de la aplicación vinculada?", "en": "Remove variable %s from the linked application?"}[locale]
+		return fmt.Sprintf(format, names)
+	}
+	return fmt.Sprintf(format, names, target)
+}
+
+func linkedProject() bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	cfg, err := local.ReadProject(cwd)
+	return err == nil && cfg != nil && strings.TrimSpace(cfg["ID"]) != ""
 }
 
 func fail(out io.Writer, jsonMode bool, code string, err error) int {

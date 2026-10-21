@@ -383,6 +383,11 @@ func remove(ctx context.Context, client *vertracloud.Client, args []string) (any
 
 func lifecycle(ctx context.Context, client *vertracloud.Client, action string, args []string) (any, error) {
 	fs := flags("db " + action)
+	if action == "stop" {
+		args = intermixFlags(args, nil, map[string]bool{"--yes": true, "-y": true})
+		fs.Bool("yes", false, "confirm stop")
+		fs.Bool("y", false, "confirm stop")
+	}
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
