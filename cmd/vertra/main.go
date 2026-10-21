@@ -224,16 +224,15 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return fail(errOut, jsonMode, "NOT_AUTHENTICATED", errors.New("set VERTRA_API_KEY or run auth login --token <key>"))
 	}
 	if destructive, label := destructivePath(args, locale); destructive && !hasYes(args) {
-		if jsonMode || !ui.IsInteractive() {
+		if jsonMode || !interactive() {
 			return fail(errOut, jsonMode, "CONFIRMATION_REQUIRED", errors.New(label))
 		}
-		confirmed, confirmErr := ui.Confirm(label)
+		confirmed, confirmErr := askConfirm(label)
 		if confirmErr != nil {
 			return fail(errOut, false, "CONFIRMATION_REQUIRED", confirmErr)
 		}
 		if !confirmed {
-			fmt.Fprintln(out, cancelled(locale))
-			return 0
+			return cancelledExit(errOut, locale, false)
 		}
 		args = append(args, "--yes")
 	}
@@ -343,13 +342,23 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	return finish(out, errOut, jsonMode, locale, data, err, args)
 }
 
+// exitCancelled is the exit status when the person declines a confirmation:
+// the same as any other failure, told apart by the CANCELLED code in --json.
+const exitCancelled = 1
+
+var (
+	interactive = ui.IsInteractive
+	askConfirm  = ui.Confirm
+)
+
+func cancelledExit(errOut io.Writer, locale string, jsonMode bool) int {
+	fail(errOut, jsonMode, "CANCELLED", errors.New(cancelled(locale)))
+	return exitCancelled
+}
+
 func finish(out, errOut io.Writer, jsonMode bool, locale string, data any, err error, args []string) int {
-	if errors.Is(err, apps.ErrDeclined) {
-		return fail(errOut, jsonMode, "CANCELLED", errors.New(cancelled(locale)))
-	}
 	if errors.Is(err, apps.ErrCancelled) {
-		fmt.Fprintln(out, cancelled(locale))
-		return 0
+		return cancelledExit(errOut, locale, jsonMode)
 	}
 	if err != nil {
 		return fail(errOut, jsonMode, "COMMAND_FAILED", err)

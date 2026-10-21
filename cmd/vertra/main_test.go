@@ -242,13 +242,39 @@ func TestJsonDomainsRemoveAliasRequiresConfirmationBeforeNetwork(t *testing.T) {
 	}
 }
 
-func TestDeclinedDomainsRemoveExitsNonZeroWithCancelledMessage(t *testing.T) {
-	var out, errOut bytes.Buffer
-	if code := finish(&out, &errOut, false, "en", nil, apps.ErrDeclined, nil); code != 1 {
-		t.Fatalf("exit=%d", code)
+func TestCancelledExitsNonZeroWithCancelledMessage(t *testing.T) {
+	for _, jsonMode := range []bool{false, true} {
+		var out, errOut bytes.Buffer
+		if code := finish(&out, &errOut, jsonMode, "en", nil, apps.ErrCancelled, nil); code != exitCancelled {
+			t.Fatalf("json=%v exit=%d", jsonMode, code)
+		}
+		if out.Len() != 0 || !strings.Contains(errOut.String(), "Operation cancelled.") {
+			t.Fatalf("json=%v stdout=%q stderr=%q", jsonMode, out.String(), errOut.String())
+		}
+		if jsonMode && !strings.Contains(errOut.String(), `"code":"CANCELLED"`) || strings.Contains(errOut.String(), `"ok":true`) {
+			t.Fatalf("stderr=%q", errOut.String())
+		}
 	}
-	if out.Len() != 0 || !strings.Contains(errOut.String(), "Operation cancelled.") {
-		t.Fatalf("stdout=%q stderr=%q", out.String(), errOut.String())
+}
+
+func TestCancelledOnExternalGateExitsNonZero(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VERTRA_API_KEY", "dummy")
+	interactive, askConfirm = func() bool { return true }, func(string) (bool, error) { return false, nil }
+	t.Cleanup(func() { interactive, askConfirm = ui.IsInteractive, ui.Confirm })
+	for _, args := range [][]string{
+		{"app", "delete", "app-id"},
+		{"db", "delete", "db-id"},
+		{"app", "network", "unpublish", "app-id"},
+		{"snapshot", "restore", "res", "snap"},
+		{"folder", "delete", "f"},
+		{"blob", "rm", "id"},
+	} {
+		var out, errOut bytes.Buffer
+		code := run(context.Background(), args, &out, &errOut)
+		if code != exitCancelled || out.Len() != 0 || !strings.Contains(errOut.String(), "Operation cancelled.") {
+			t.Errorf("%v: exit=%d stdout=%q stderr=%q", args, code, out.String(), errOut.String())
+		}
 	}
 }
 

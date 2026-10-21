@@ -608,7 +608,7 @@ func remove(ctx context.Context, client *vertracloud.Client, args []string) (any
 			return nil, err
 		}
 		if !ok {
-			return nil, nil
+			return nil, ErrCancelled
 		}
 	}
 	if err := client.Apps.Delete(ctx, id); err != nil {
@@ -1105,8 +1105,11 @@ func file(ctx context.Context, client *vertracloud.Client, args []string, jsonMo
 		}
 		if !*yes {
 			ok, e := confirm(os.Stdin, fmt.Sprintf("Delete file %s? [y/N] ", path))
-			if e != nil || !ok {
+			if e != nil {
 				return nil, e
+			}
+			if !ok {
+				return nil, ErrCancelled
 			}
 		}
 		if err := client.Apps.Files().Delete(ctx, id, vertracloud.ApplicationFileDeleteBody{Path: path}); err != nil {
@@ -1300,7 +1303,7 @@ func domains(ctx context.Context, client *vertracloud.Client, args []string) (an
 				return nil, e
 			}
 			if !ok {
-				return nil, ErrDeclined
+				return nil, ErrCancelled
 			}
 		}
 		if err := client.Apps.Domains().Remove(ctx, id, domain.ID); err != nil {
@@ -1400,8 +1403,11 @@ func destructiveNetwork(ctx context.Context, client *vertracloud.Client, args []
 	}
 	if !*yes {
 		ok, e := confirm(os.Stdin, fmt.Sprintf("Continue for app %s? [y/N] ", id))
-		if e != nil || !ok {
+		if e != nil {
 			return nil, e
+		}
+		if !ok {
+			return nil, ErrCancelled
 		}
 	}
 	if purge {

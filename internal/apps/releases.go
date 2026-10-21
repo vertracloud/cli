@@ -13,11 +13,8 @@ import (
 	"github.com/vertracloud/sdk-api-go/vertracloud"
 )
 
-// ErrCancelled is returned when the person declines a confirmation prompt.
+// ErrCancelled is returned when the person declines a confirmation prompt; the command must not report success.
 var ErrCancelled = errors.New("operation cancelled")
-
-// ErrDeclined is returned when a destructive command was not confirmed and must not report success.
-var ErrDeclined = errors.New("operation cancelled")
 
 // healthPathRe is the API rule for the health check path: starts with "/", visible ASCII, no spaces.
 var healthPathRe = regexp.MustCompile(`^/[\x21-\x7e]*$`)

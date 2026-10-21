@@ -118,7 +118,7 @@ vertra app domains remove <domain-id|hostname> [--app <id>] [--yes]
 
 Every command takes the domain id or its hostname. `add` also creates the automatic `www`/root companion unless you pass `--no-www`; it does not count toward the plan limit. `--port` is 1 to 65535, `--redirect-status` is 301, 302, 307 or 308 (default 308), and `--path-prefix` is a literal path such as `/api`. In `update`, an empty `--path-prefix ""` or `--redirect-to ""` clears the value, and `--primary` swaps the domain with its companion as the main one. `remove` asks for confirmation and also removes the companion, unless the domain you remove is itself the companion. `app list --filter domain=shop` matches any domain of the app.
 
-Run `vertra --help` or `vertra <command> --help` for every flag. When an ID is omitted, the CLI uses the linked application or lets you pick one. Destructive commands ask for confirmation; pass `--yes` in automation.
+Run `vertra --help` or `vertra <command> --help` for every flag. When an ID is omitted, the CLI uses the linked application or lets you pick one. Destructive commands ask for confirmation; pass `--yes` in automation. Declining the prompt exits with status 1 and the message "Operation cancelled." (with `--json`, an error with code `CANCELLED` on stderr); it is never reported as success.
 
 ## Scripting
 

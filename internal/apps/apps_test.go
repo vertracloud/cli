@@ -533,7 +533,7 @@ func TestDomainsRemoveDeclinedOrEmptyStdinIsNotSuccess(t *testing.T) {
 				client, domains := domainsClient(vertracloud.ApplicationDomain{ID: "d1", Hostname: "x.com"})
 				withStdinAndStderr(t, stdin)
 				got, err := Run(context.Background(), client, "domains", []string{alias, "x.com", "--app", "app-1"})
-				if !errors.Is(err, ErrDeclined) || got != nil || domains.removed != "" {
+				if !errors.Is(err, ErrCancelled) || got != nil || domains.removed != "" {
 					t.Fatalf("got=%#v err=%v removed=%q", got, err, domains.removed)
 				}
 			})
@@ -852,5 +852,25 @@ func TestListKeepsBuildingStatus(t *testing.T) {
 	rows := got.(ui.Presentation).Human.([]map[string]any)
 	if rows[0]["status"] != "building" || rows[1]["status"] != "up" {
 		t.Fatalf("statuses = %v, %v", rows[0]["status"], rows[1]["status"])
+	}
+}
+
+func TestDeclinedDestructivePromptsAreCancelledNotSuccess(t *testing.T) {
+	for name, args := range map[string][]string{
+		"app delete":            {"delete", "app-1"},
+		"app file delete":       {"file", "delete", "--app", "app-1", "/a.txt"},
+		"app network unpublish": {"network", "unpublish", "app-1"},
+		"app network purge":     {"network", "purge-cache", "app-1"},
+	} {
+		for stdinName, stdin := range map[string]string{"empty": "", "no": "n\n"} {
+			t.Run(name+"/"+stdinName, func(t *testing.T) {
+				apps := &fakeApps{}
+				withStdinAndStderr(t, stdin)
+				got, err := Run(context.Background(), &vertracloud.Client{Apps: apps}, args[0], args[1:])
+				if !errors.Is(err, ErrCancelled) || got != nil || apps.deleted != "" {
+					t.Fatalf("got=%#v err=%v deleted=%q", got, err, apps.deleted)
+				}
+			})
+		}
 	}
 }
