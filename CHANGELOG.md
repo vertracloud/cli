@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/vertracloud/cli/compare/v0.3.0...v0.3.1) (2026-10-22)
+
+
+### Features
+
+* **upload:** send LANGUAGE from vertracloud.config ([751b561](https://github.com/vertracloud/cli/commit/751b56107a108fd10c1bd37146ab18f077498c78))
+
 ## [0.3.0](https://github.com/vertracloud/cli/compare/v0.2.2...v0.3.0) (2026-10-22)
 
 
