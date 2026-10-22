@@ -753,6 +753,7 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	start := f.String("start", "", "start command")
 	workspace := f.String("workspace", "", "workspace id")
 	noWait := f.Bool("no-wait", false, "return right after the upload, without waiting for the build")
+	language := ""
 	pos, err := parse(f, args, map[string]bool{"--file": true, "--name": true, "--memory": true, "--main": true, "--version": true, "--description": true, "--subdomain": true, "--start": true, "--workspace": true}, map[string]bool{"--no-wait": true})
 	if err != nil {
 		return nil, err
@@ -784,6 +785,7 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 			if *start == "" {
 				*start = cfg["START"]
 			}
+			language = cfg["LANGUAGE"]
 		}
 	}
 	if *name == "" && !jsonMode {
@@ -833,7 +835,7 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	if *description != "" {
 		descriptionValue = vertracloud.NullableValue(*description)
 	}
-	app, err := client.Apps.Create(ctx, vertracloud.ApplicationCreateParams{File: r, FileName: filename, Name: *name, Memory: *memory, Main: *main, Version: vertracloud.ApplicationVersion(*version), Description: descriptionValue, Subdomain: *subdomain, Start: *start, WorkspaceID: *workspace})
+	app, err := client.Apps.Create(ctx, vertracloud.ApplicationCreateParams{File: r, FileName: filename, Name: *name, Memory: *memory, Main: *main, Version: vertracloud.ApplicationVersion(*version), Language: vertracloud.ApplicationLanguage(language), Description: descriptionValue, Subdomain: *subdomain, Start: *start, WorkspaceID: *workspace})
 	stop()
 	if err != nil {
 		return nil, err

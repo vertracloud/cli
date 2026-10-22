@@ -260,6 +260,7 @@ type fakeApps struct {
 	getID       string
 	getApp      vertracloud.Application
 	createCalls int
+	createArgs  vertracloud.ApplicationCreateParams
 	createdApp  vertracloud.Application
 	waitApp     vertracloud.Application
 	waitErr     error
@@ -310,8 +311,9 @@ func (f *fakeApps) Logs(context.Context, string, ...rest.RequestOpt) (string, er
 func (f *fakeApps) Download(context.Context, string, ...rest.RequestOpt) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
-func (f *fakeApps) Create(context.Context, vertracloud.ApplicationCreateParams, ...rest.RequestOpt) (vertracloud.Application, error) {
+func (f *fakeApps) Create(_ context.Context, params vertracloud.ApplicationCreateParams, _ ...rest.RequestOpt) (vertracloud.Application, error) {
 	f.createCalls++
+	f.createArgs = params
 	return f.createdApp, nil
 }
 func (f *fakeApps) WaitUntilReady(context.Context, string, *vertracloud.WaitOptions, ...rest.RequestOpt) (vertracloud.Application, error) {
@@ -834,6 +836,29 @@ func TestUploadWaitsForBuild(t *testing.T) {
 	apps = &fakeApps{createdApp: building, waitErr: &vertracloud.AppNotReadyError{Code: "INSTALL_OUT_OF_MEMORY"}}
 	if _, err := runUpload(t, apps); err == nil || !strings.Contains(err.Error(), "(INSTALL_OUT_OF_MEMORY): raise the app memory") {
 		t.Fatalf("oom err = %v", err)
+	}
+}
+
+func TestUploadSendsLanguageFromConfig(t *testing.T) {
+	original, _ := os.Getwd()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "vertracloud.config"), []byte("LANGUAGE=deno\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(original)
+	zipPath := filepath.Join(t.TempDir(), "a.zip")
+	if err := os.WriteFile(zipPath, []byte("PK"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	apps := &fakeApps{createdApp: vertracloud.Application{ID: "app-1", Status: vertracloud.ApplicationStatusUp}}
+	if _, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: apps}, "upload", []string{"--name", "a", "--memory", "256", "--main", "index.js", "--file", zipPath}, true); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	if apps.createArgs.Language != vertracloud.ApplicationLanguageDeno {
+		t.Fatalf("Language = %q, want deno", apps.createArgs.Language)
 	}
 }
 
