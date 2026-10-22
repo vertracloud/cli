@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/vertracloud/cli/compare/v0.2.2...v0.3.0) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* app domains commands and plan names
+
+### Features
+
+* app domains commands and plan names ([2bbd872](https://github.com/vertracloud/cli/commit/2bbd872a00185a6958619facba3369169fceacbc))
+* confirm before app stop, db stop and app env remove ([92e1158](https://github.com/vertracloud/cli/commit/92e1158b8c6855a0ba3e2a74f1fdf3ae7b0922cd))
+
+
+### Bug Fixes
+
+* declining a domain removal exits non-zero and the prompt names the domain and app ([dfab0e7](https://github.com/vertracloud/cli/commit/dfab0e7fb367003c30427889f62bbff480c145d4))
+* declining any destructive confirmation exits 1 with CANCELLED instead of 0 ([adf6ee3](https://github.com/vertracloud/cli/commit/adf6ee3e1ed230e74e60e550fe055f0149dacbfa))
+* **deps:** require sdk-api-go v0.3.0 ([d53e638](https://github.com/vertracloud/cli/commit/d53e6386328c80d94f51b30bfa528b462449ab63))
+* the domain removal prompt mentions the companion only when it is removed too ([0f231a8](https://github.com/vertracloud/cli/commit/0f231a8b3e72f965ead395db158ccf4094a2016b))
+
 ## [0.2.2](https://github.com/vertracloud/cli/compare/v0.2.1...v0.2.2) (2026-10-18)
 
 
