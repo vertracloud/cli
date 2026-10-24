@@ -256,6 +256,7 @@ func TestFileWriteAndMoveReturnNodeSuccessShapes(t *testing.T) {
 }
 
 type fakeApps struct {
+	network     fakeNetwork
 	deleted     string
 	getID       string
 	getApp      vertracloud.Application
@@ -311,6 +312,9 @@ func (f *fakeApps) Logs(context.Context, string, ...rest.RequestOpt) (string, er
 func (f *fakeApps) Download(context.Context, string, ...rest.RequestOpt) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
+func (f *fakeApps) CreateFromImage(context.Context, vertracloud.ApplicationCreateFromImageParams, ...rest.RequestOpt) (vertracloud.Application, error) {
+	return vertracloud.Application{}, nil
+}
 func (f *fakeApps) Create(_ context.Context, params vertracloud.ApplicationCreateParams, _ ...rest.RequestOpt) (vertracloud.Application, error) {
 	f.createCalls++
 	f.createArgs = params
@@ -338,7 +342,7 @@ func (f *fakeApps) Delete(_ context.Context, id string, _ ...rest.RequestOpt) er
 	return nil
 }
 func (f *fakeApps) Deploys() vertracloud.AppsDeploysService   { return fakeDeploys{} }
-func (f *fakeApps) Network() vertracloud.AppsNetworkService   { return fakeNetwork{} }
+func (f *fakeApps) Network() vertracloud.AppsNetworkService   { return &f.network }
 func (f *fakeApps) Domains() vertracloud.AppsDomainsService   { return &f.domains }
 func (f *fakeApps) Envs() vertracloud.AppsEnvsService         { return fakeEnvs{} }
 func (f *fakeApps) Releases() vertracloud.AppsReleasesService { return &f.releases }
@@ -361,7 +365,9 @@ func (fakeWebhook) Create(context.Context, string, vertracloud.ApplicationWebhoo
 }
 func (fakeWebhook) Delete(context.Context, string, ...rest.RequestOpt) error { return nil }
 
-type fakeNetwork struct{}
+type fakeNetwork struct {
+	publishPort *int
+}
 
 func (fakeNetwork) PurgeCache(context.Context, string, *vertracloud.ApplicationPurgeCacheBody, ...rest.RequestOpt) error {
 	return nil
@@ -370,6 +376,10 @@ func (fakeNetwork) SetSubdomain(context.Context, string, string, ...rest.Request
 	return vertracloud.ApplicationSubdomainResponse{}, nil
 }
 func (fakeNetwork) Publish(context.Context, string, string, ...rest.RequestOpt) (vertracloud.ApplicationWebPublish, error) {
+	return vertracloud.ApplicationWebPublish{}, nil
+}
+func (f *fakeNetwork) PublishWithPort(_ context.Context, _, _ string, port *int, _ ...rest.RequestOpt) (vertracloud.ApplicationWebPublish, error) {
+	f.publishPort = port
 	return vertracloud.ApplicationWebPublish{}, nil
 }
 func (fakeNetwork) Unpublish(context.Context, string, ...rest.RequestOpt) (vertracloud.ApplicationWebPublish, error) {
@@ -414,6 +424,26 @@ func domainsClient(existing ...vertracloud.ApplicationDomain) (*vertracloud.Clie
 	apps := &fakeApps{}
 	apps.domains.existing = existing
 	return &vertracloud.Client{Apps: apps}, &apps.domains
+}
+
+func TestNetworkPublishSendsPortOnlyWhenGiven(t *testing.T) {
+	apps := &fakeApps{}
+	client := &vertracloud.Client{Apps: apps}
+	if _, err := Run(context.Background(), client, "network", []string{"publish", "--app", "app-1", "--port", "3000"}); err != nil {
+		t.Fatal(err)
+	}
+	if apps.network.publishPort == nil || *apps.network.publishPort != 3000 {
+		t.Fatalf("port = %v, want 3000", apps.network.publishPort)
+	}
+	if _, err := Run(context.Background(), client, "network", []string{"publish", "--app", "app-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if apps.network.publishPort != nil {
+		t.Fatalf("port = %d, want omitted", *apps.network.publishPort)
+	}
+	if _, err := Run(context.Background(), client, "network", []string{"publish", "--app", "app-1", "--port", "70000"}); err == nil {
+		t.Fatal("port 70000 must be refused before the request")
+	}
 }
 
 func TestDomainsAddSendsFlags(t *testing.T) {
@@ -688,6 +718,33 @@ func TestCommitReturnsUploadResponse(t *testing.T) {
 	}
 	if apps.files.uploadPath != "src/lib" {
 		t.Fatalf("upload path=%q, want src/lib", apps.files.uploadPath)
+	}
+}
+
+func TestCommitOnImageAppShowsMessageAndBuildID(t *testing.T) {
+	resp := vertracloud.ApplicationFileUploadResponse{
+		AppID: "app-1", Message: "Rebuilding image web-base",
+		ImageBuild: &vertracloud.ApplicationImageBuild{ImageID: "img-1", BuildID: "bld-7"},
+	}
+	apps := &fakeApps{files: fakeFiles{uploadResponse: resp}}
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, []byte("zip"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Run(context.Background(), &vertracloud.Client{Apps: apps}, "commit", []string{"app-1", "--file", zipPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := got.(ui.Presentation)
+	if !ok {
+		t.Fatalf("commit returned %#v", got)
+	}
+	if !reflect.DeepEqual(p.JSON, resp) {
+		t.Fatalf("json = %#v", p.JSON)
+	}
+	human := p.Human.(map[string]any)
+	if human["message"] != "Rebuilding image web-base" || human["build_id"] != "bld-7" || human["image_id"] != "img-1" {
+		t.Fatalf("human = %#v", human)
 	}
 }
 

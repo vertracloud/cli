@@ -36,6 +36,10 @@ func (f *snapshotFake) Restore(context.Context, string, string, vertracloud.Snap
 	f.restored = true
 	return vertracloud.SnapshotRestoreResponse{Message: "restored"}, nil
 }
+func (f *snapshotFake) RestoreWith(context.Context, string, string, vertracloud.SnapshotScope, vertracloud.SnapshotRestoreParams, ...rest.RequestOpt) (vertracloud.SnapshotRestoreResponse, error) {
+	f.restored = true
+	return vertracloud.SnapshotRestoreResponse{Message: "restored"}, nil
+}
 func (f *snapshotFake) RestoreTo(context.Context, string, string, vertracloud.SnapshotScope, string, ...rest.RequestOpt) (vertracloud.SnapshotRestoreResponse, error) {
 	f.restored = true
 	return vertracloud.SnapshotRestoreResponse{Message: "restored"}, nil

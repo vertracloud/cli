@@ -2,10 +2,13 @@ package databases
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/vertracloud/cli/internal/ui"
 	"github.com/vertracloud/sdk-api-go/rest"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
 )
@@ -150,5 +153,73 @@ func TestDestructiveCommandsRequireYes(t *testing.T) {
 	}
 	if _, err := Run(context.Background(), client, "credentials", []string{"reset", "password", "db-1"}); err == nil {
 		t.Fatal("credential reset without --yes was accepted")
+	}
+}
+
+type versionsFake struct {
+	vertracloud.DatabasesService
+	catalog vertracloud.DatabaseVersions
+	created *vertracloud.DatabaseCreateBody
+}
+
+func (f *versionsFake) Versions(_ context.Context, _ ...rest.RequestOpt) (vertracloud.DatabaseVersions, error) {
+	return f.catalog, nil
+}
+
+func (f *versionsFake) Create(_ context.Context, params vertracloud.DatabaseCreateBody, _ ...rest.RequestOpt) (vertracloud.Database, error) {
+	f.created = &params
+	return vertracloud.Database{ID: "db-1", Version: params.Version}, nil
+}
+
+func TestVersionsOrdersByTypeAndKeepsCatalog(t *testing.T) {
+	fake := &versionsFake{catalog: vertracloud.DatabaseVersions{
+		"3": {Recommended: "8.2", Available: []string{"8.2", "7.2"}},
+		"1": {Recommended: "18", Available: []string{"18", "17"}},
+	}}
+	got, err := Run(context.Background(), &vertracloud.Client{Databases: fake}, "versions", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := got.(ui.Presentation).Human.([]map[string]any)
+	if len(rows) != 2 || rows[0]["type"] != float64(1) || rows[0]["available"] != "18, 17" || rows[1]["recommended"] != "8.2" {
+		t.Fatalf("rows = %#v", rows)
+	}
+}
+
+func TestCreateSendsVersionOnlyWhenGiven(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		args    []string
+		version string
+		sent    bool
+	}{
+		{"explicit version", []string{"--version", " 17 "}, "17", true},
+		{"no version", nil, "", false},
+		{"snapshot keeps its line", []string{"--snapshot", "snap-1"}, "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &versionsFake{}
+			args := append([]string{"--name", "a", "--memory", "512", "--type", "postgres"}, test.args...)
+			if _, err := Run(context.Background(), &vertracloud.Client{Databases: fake}, "create", args); err != nil {
+				t.Fatal(err)
+			}
+			if fake.created == nil || fake.created.Version != test.version {
+				t.Fatalf("created = %#v, want version %q", fake.created, test.version)
+			}
+			payload, err := json.Marshal(fake.created)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if has := strings.Contains(string(payload), `"version"`); has != test.sent {
+				t.Fatalf("body = %s, version sent = %v", payload, has)
+			}
+		})
+	}
+}
+
+func TestPresentVersionsKeepsUnknownKeys(t *testing.T) {
+	rows := presentVersions(vertracloud.DatabaseVersions{"x": {Recommended: "1"}})
+	if rows[0]["type"] != "x" {
+		t.Fatalf("rows = %#v", rows)
 	}
 }

@@ -167,7 +167,7 @@ func Normalize(command string) string {
 	if len(words) == 0 {
 		return ""
 	}
-	group := map[string]string{"projects": "projects", "project": "projects", "proj": "projects", "apps": "app", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite", "language": "lang", "locale": "lang"}[words[0]]
+	group := map[string]string{"projects": "projects", "project": "projects", "proj": "projects", "apps": "app", "images": "image", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite", "language": "lang", "locale": "lang"}[words[0]]
 	if group == "" {
 		group = words[0]
 	}
@@ -184,7 +184,7 @@ func Normalize(command string) string {
 			return "link show"
 		}
 		return "link"
-	case "app", "db", "workspace", "snapshot", "folder", "favorite", "auth":
+	case "app", "db", "workspace", "snapshot", "folder", "favorite", "auth", "image":
 	default:
 		return group
 	}
@@ -213,8 +213,10 @@ func Normalize(command string) string {
 
 var listColumns = map[string][]string{
 	"projects":         {"name", "id", "kind", "status", "cpu", "ram", "runtime", "folder"},
+	"image list":       {"name", "id", "status", "apps", "size", "github", "updated_at"},
 	"app list":         {"name", "id", "status", "cpu", "ram", "language", "domain", "folder"},
-	"db list":          {"name", "id", "type", "status", "cpu", "ram", "folder"},
+	"db list":          {"name", "id", "type", "version", "status", "cpu", "ram", "folder"},
+	"db versions":      {"type", "recommended", "available"},
 	"app status":       {"name", "id", "status", "cpu", "ram", "uptime"},
 	"db status":        {"name", "id", "status", "cpu", "ram", "storage", "uptime"},
 	"workspace list":   {"name", "id", "members_count", "created_at"},
@@ -973,6 +975,9 @@ var translations = map[string]map[string]string{
 		"shield_reason_rate_limit_out": "O Vertra Shield detectou excesso de requisições enviadas.",
 		"shield_ram_hint":              "Os limites de requisições e de banda crescem com a memória alocada: se o tráfego é legítimo, aumentar a RAM do projeto aumenta esses limites.",
 		"shield_list":                  "%d pausado(s) pelo Vertra Shield. Veja o motivo com: vertra app info <id>",
+		"db_version_invalid":           "Versão de banco inválida para este tipo. Veja as disponíveis com: vertra db versions",
+		"db_version_older":             "A versão escolhida é mais antiga que a da snapshot. Use a mesma versão ou uma mais nova.",
+		"recommended":                  "Recomendada",
 		"shield_blocked":               "Bloqueado pelo Vertra Shield até a contenção liberar.",
 		"signed_in":                    "Login realizado como %s.", "not_linked": "Esta pasta não está vinculada a nenhuma aplicação.",
 		"doctor_summary": "%v ok · %v avisos · %v erros", "picker_hint": "↑/↓ navegar · enter selecionar · q sair",
@@ -1020,6 +1025,9 @@ var translations = map[string]map[string]string{
 		"shield_reason_rate_limit_out": "Vertra Shield detectó exceso de solicitudes enviadas.",
 		"shield_ram_hint":              "Los límites de solicitudes y de ancho de banda crecen con la memoria asignada: si el tráfico es legítimo, aumentar la RAM del proyecto eleva esos límites.",
 		"shield_list":                  "%d pausado(s) por Vertra Shield. Mira el motivo con: vertra app info <id>",
+		"db_version_invalid":           "Versión de base de datos no válida para este tipo. Mira las disponibles con: vertra db versions",
+		"db_version_older":             "La versión elegida es anterior a la de la snapshot. Usa la misma versión o una más nueva.",
+		"recommended":                  "Recomendada",
 		"shield_blocked":               "Bloqueado por Vertra Shield hasta que la contención se libere.",
 		"signed_in":                    "Sesión iniciada como %s.", "not_linked": "Esta carpeta no está vinculada a ninguna aplicación.",
 		"doctor_summary": "%v ok · %v avisos · %v errores", "picker_hint": "↑/↓ navegar · enter seleccionar · q salir",
@@ -1067,6 +1075,9 @@ var translations = map[string]map[string]string{
 		"shield_reason_rate_limit_out": "Vertra Shield detected too many outgoing requests.",
 		"shield_ram_hint":              "Request and bandwidth limits scale with the allocated memory: if the traffic is legitimate, increasing the project's RAM raises those limits.",
 		"shield_list":                  "%d paused by Vertra Shield. See why with: vertra app info <id>",
+		"db_version_invalid":           "Invalid database version for this type. See the available ones with: vertra db versions",
+		"db_version_older":             "The chosen version is older than the snapshot's. Use the same version or a newer one.",
+		"recommended":                  "Recommended",
 		"shield_blocked":               "Blocked by Vertra Shield until the containment clears.",
 		"signed_in":                    "Signed in as %s.", "not_linked": "This directory is not linked to an application.",
 		"doctor_summary": "%v passed · %v warnings · %v errors", "picker_hint": "↑/↓ move · enter select · q quit",

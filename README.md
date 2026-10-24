@@ -58,6 +58,7 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 |---|---|
 | `vertra auth login\|whoami\|logout` | Connect and inspect your account. |
 | `vertra app ...` | List, inspect, start, stop, restart, deploy, configure and delete applications; releases and rollback; logs, metrics, environment variables, files and domains. |
+| `vertra image ...` | Docker images: build from a folder or `.zip`, list, inspect, rename and describe, rebuild, build logs, create apps from an image and delete. |
 | `vertra db ...` | Create and manage databases, credentials and certificates. |
 | `vertra projects` | Applications and databases in one table, with live status. |
 | `vertra snapshot ...` | List, create, download and restore snapshots. |
@@ -70,6 +71,28 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 | `vertra status` | Platform status. |
 
 `vertra app commit [<id>] [-m <message>]` sends a commit message with the upload, shown in the deploy history (up to 500 characters). Without `-m`, the CLI uses the subject of the last git commit in the folder, if there is one; otherwise the upload has no message.
+
+### Docker images
+
+```sh
+vertra image build --name my-image [--description <text>] [--context <folder|.zip>] [--workspace <id>]
+vertra image list [--workspace <id>]
+vertra image get <id>
+vertra image update <id> [--name <name>] [--description <text>]
+vertra image rename <id> <name>
+vertra image rebuild <id> [--context <folder|.zip>]
+vertra image logs <id> [--follow] [--version <id>]
+vertra image deploy <image-id> --name my-app --ram 512 [--web] [--port 3000] [--subdomain my-app] [--env KEY=VALUE]
+vertra image delete <id> [--yes]
+```
+
+`--context` takes a folder or a `.zip` (default: the current folder). A folder is packed for you: `.dockerignore` is honored (patterns, `!` exceptions and comments), the root `Dockerfile` is always kept, `.env*` files are never sent (not even with `!.env`) and symlinks are skipped. A `.zip` is sent as it is, and the server filters out `.env`. The CLI refuses a context over 100 MB before uploading anything. `build` and `rebuild` return as soon as the build starts: follow it with `vertra image logs <id> --follow`. Apps never restart on their own after a rebuild.
+
+`--description` (up to 128 characters) is optional. `image update` renames the image and/or changes its description without building anything (apps keep running); an empty `--description ""` removes the description, and `image rename <id> <name>` is a shortcut for `update --name`. A name already used by another of your images is refused.
+
+`image deploy` creates an app that runs the image; `--port` and `--subdomain` only apply with `--web`, and `--env` can be repeated. `image delete` also deletes the apps created from the image, so without `--yes` it asks you to type the image name (with `--json` or without a terminal it fails with `CONFIRMATION_REQUIRED`).
+
+`vertra commit` on an app created from an image works as on any app; the server decides what happens to the image.
 
 ### Blob Storage
 

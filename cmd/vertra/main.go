@@ -17,6 +17,7 @@ import (
 	"github.com/vertracloud/cli/internal/blob"
 	"github.com/vertracloud/cli/internal/config"
 	"github.com/vertracloud/cli/internal/databases"
+	"github.com/vertracloud/cli/internal/images"
 	"github.com/vertracloud/cli/internal/local"
 	"github.com/vertracloud/cli/internal/resources"
 	"github.com/vertracloud/cli/internal/ui"
@@ -304,6 +305,18 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			}
 			data, err = apps.RunWithOptions(ctx, client, args[1], args[2:], jsonMode)
 		}
+	case "image", "images":
+		if len(args) < 2 {
+			err = errors.New("missing image command")
+			break
+		}
+		if args[1] == "logs" && !jsonMode {
+			if err := images.StreamLogs(ctx, client, args[2:], out); err != nil {
+				return finish(out, errOut, jsonMode, locale, nil, err, args)
+			}
+			return 0
+		}
+		data, err = images.Run(ctx, client, args[1], args[2:], jsonMode)
 	case "logs":
 		if follows(args[1:]) {
 			if jsonMode {
@@ -513,6 +526,7 @@ var topHelp = []helpSection{
 	{[3]string{"Recursos", "Resources", "Recursos"}, []helpEntry{
 		{"projects", [3]string{"Lista apps e bancos juntos, com estado", "List apps and databases together, with status", "Lista apps y bases de datos juntas, con estado"}},
 		{"app", [3]string{"Aplicações: deploy, versões e rollback, estado, logs, variáveis, arquivos e rede", "Applications: deploy, releases and rollback, status, logs, env, files and network", "Aplicaciones: deploy, versiones y rollback, estado, logs, variables, archivos y red"}},
+		{"image", [3]string{"Imagens Docker: build, lista, rebuild, logs e apps a partir da imagem", "Docker images: build, list, rebuild, logs and apps from an image", "Imágenes Docker: build, lista, rebuild, logs y apps desde la imagen"}},
 		{"db", [3]string{"Bancos de dados: criar, estado, credenciais", "Databases: create, status, credentials", "Bases de datos: crear, estado, credenciales"}},
 		{"workspace", [3]string{"Workspaces, membros, convites e funções", "Workspaces, members, invites and roles", "Espacios de trabajo, miembros, invitaciones y roles"}},
 		{"snapshot", [3]string{"Cria, baixa e restaura snapshots", "Create, download and restore snapshots", "Crea, descarga y restaura snapshots"}},
@@ -557,9 +571,21 @@ var groupHelp = map[string][]helpEntry{
 		{"network subdomain|publish|unpublish|purge-cache", [3]string{"Subdomínio e publicação", "Subdomain and publishing", "Subdominio y publicación"}},
 		{"delete [<id>] [--yes]", [3]string{"Exclui a aplicação", "Delete the application", "Elimina la aplicación"}},
 	},
+	"image": {
+		{"build --name <name> [--description <text>] [--context <folder|.zip>] [--workspace <id>]", [3]string{"Cria uma imagem Docker a partir de uma pasta (respeita .dockerignore; .env* nunca é enviado) ou de um .zip. Limite: 100 MB", "Create a Docker image from a folder (honors .dockerignore; .env* is never sent) or a .zip. Limit: 100 MB", "Crea una imagen Docker desde una carpeta (respeta .dockerignore; .env* nunca se envía) o un .zip. Límite: 100 MB"}},
+		{"list [--workspace <id>]", [3]string{"Lista suas imagens", "List your images", "Lista tus imágenes"}},
+		{"get <id>", [3]string{"Detalhes da imagem, versão atual e apps", "Image details, current version and apps", "Detalles de la imagen, versión actual y apps"}},
+		{"update <id> [--name <name>] [--description <text>] [--workspace <id>]", [3]string{"Renomeia a imagem e/ou muda a descrição, sem buildar nada. --description vazio remove a descrição", "Rename the image and/or change its description, without building anything. An empty --description removes it", "Renombra la imagen y/o cambia la descripción, sin construir nada. --description vacío la elimina"}},
+		{"rename <id> <name>", [3]string{"Atalho para update --name", "Shortcut for update --name", "Atajo para update --name"}},
+		{"rebuild <id> [--context <folder|.zip>]", [3]string{"Substitui o contexto e reconstrói a imagem. Os apps não reiniciam sozinhos", "Replace the context and rebuild the image. Apps do not restart on their own", "Reemplaza el contexto y reconstruye la imagen. Las apps no se reinician solas"}},
+		{"logs <id> [--follow] [--version <id>]", [3]string{"Log do build, ou acompanha ao vivo", "Build log, or follow it live", "Log del build, o síguelo en vivo"}},
+		{"deploy <image-id> --name <name> --ram <MB> [--web] [--port N] [--subdomain <s>] [--env K=V]", [3]string{"Cria um app a partir da imagem. --port e --subdomain só com --web", "Create an app from the image. --port and --subdomain need --web", "Crea una app desde la imagen. --port y --subdomain solo con --web"}},
+		{"delete <id> [--yes]", [3]string{"Exclui a imagem e os apps criados a partir dela. Sem --yes, pede para digitar o nome", "Delete the image and the apps created from it. Without --yes, asks you to type the name", "Elimina la imagen y las apps creadas desde ella. Sin --yes, pide escribir el nombre"}},
+	},
 	"db": {
 		{"list [--workspace <id>] [--filter k=v]", [3]string{"Lista seus bancos de dados", "List your databases", "Lista tus bases de datos"}},
-		{"create --type <postgres|mongo|redis|mysql>", [3]string{"Cria um banco de dados", "Create a database", "Crea una base de datos"}},
+		{"create --type <postgres|mongo|redis|mysql> [--version <linha>]", [3]string{"Cria um banco de dados. Sem --version, usa a versão recomendada", "Create a database. Without --version, the recommended one is used", "Crea una base de datos. Sin --version, se usa la recomendada"}},
+		{"versions", [3]string{"Versões disponíveis por tipo de banco", "Available versions per database type", "Versiones disponibles por tipo de base de datos"}},
 		{"info [<id>]", [3]string{"Detalhes e conexão", "Details and connection", "Detalles y conexión"}},
 		{"status [<id>|--all]", [3]string{"CPU, memória e armazenamento", "CPU, memory and storage", "CPU, memoria y almacenamiento"}},
 		{"metrics [<id>]", [3]string{"Histórico de uso", "Usage history", "Historial de uso"}},
@@ -608,7 +634,7 @@ var groupHelp = map[string][]helpEntry{
 	},
 }
 
-var groupAliases = map[string]string{"apps": "app", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite"}
+var groupAliases = map[string]string{"apps": "app", "images": "image", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite"}
 
 func printHelp(out io.Writer, args []string, locale string) {
 	var words []string
@@ -855,6 +881,12 @@ func fail(out io.Writer, jsonMode bool, code string, err error) int {
 	if errors.As(err, &apiErr) {
 		code = apiErr.Code
 		message = ui.Plain(apiErr.Message) + " " + ui.Dim("("+ui.Plain(apiErr.Code)+")")
+		switch apiErr.Code {
+		case "INVALID_DATABASE_VERSION":
+			message = ui.Text("db_version_invalid") + " " + ui.Dim("("+apiErr.Code+")")
+		case "SNAPSHOT_VERSION_NEWER":
+			message = ui.Text("db_version_older") + " " + ui.Dim("("+apiErr.Code+")")
+		}
 		if apiErr.Code == "APP_SHIELD_COOLDOWN" {
 			message = ui.Text("shield_blocked")
 			if until := apiErr.Until(); until != nil {

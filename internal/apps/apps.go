@@ -900,6 +900,17 @@ func commit(ctx context.Context, client *vertracloud.Client, args []string, json
 	if err != nil {
 		return nil, err
 	}
+	if response.ImageBuild != nil || response.Message != "" {
+		// App on a custom image: the server decides what the commit does; show what it said.
+		human := map[string]any{"app_id": response.AppID, "updated_at": response.UpdatedAt}
+		if response.Message != "" {
+			human["message"] = ui.Plain(response.Message)
+		}
+		if b := response.ImageBuild; b != nil {
+			human["image_id"], human["build_id"] = b.ImageID, b.BuildID
+		}
+		return ui.Presentation{JSON: response, Human: human}, nil
+	}
 	return response, nil
 }
 
@@ -1147,18 +1158,26 @@ func network(ctx context.Context, client *vertracloud.Client, args []string) (an
 		f := fs("app network publish")
 		app := f.String("app", "", "app id")
 		sub := f.String("subdomain", "", "subdomain")
-		pos, err := parse(f, args[1:], map[string]bool{"--app": true, "--subdomain": true}, nil)
+		port := f.Int("port", 0, "port the image listens on (apps on a custom image)")
+		pos, err := parse(f, args[1:], map[string]bool{"--app": true, "--subdomain": true, "--port": true}, nil)
 		if err != nil {
 			return nil, err
 		}
 		if len(pos) != 0 {
 			return nil, fmt.Errorf("unexpected arguments: %s", strings.Join(pos, " "))
 		}
+		var portValue *int
+		if visitedFlags(f)["port"] {
+			if *port < 1 || *port > 65535 {
+				return nil, errors.New("--port must be between 1 and 65535")
+			}
+			portValue = port
+		}
 		id, err := resolveAppID(ctx, client, *app, "app network publish")
 		if err != nil {
 			return nil, err
 		}
-		return client.Apps.Network().Publish(ctx, id, *sub)
+		return client.Apps.Network().PublishWithPort(ctx, id, *sub, portValue)
 	case "unpublish":
 		return destructiveNetwork(ctx, client, args[1:], false)
 	case "purge-cache":

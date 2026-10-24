@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,8 @@ func Run(ctx context.Context, client *vertracloud.Client, command string, args [
 		return list(ctx, client, args)
 	case "create":
 		return create(ctx, client, args)
+	case "versions":
+		return versions(ctx, client, args)
 	case "info", "show":
 		return get(ctx, client, args)
 	case "update":
@@ -287,6 +290,7 @@ func create(ctx context.Context, client *vertracloud.Client, args []string) (any
 	description := fs.String("description", "", "database description")
 	workspace := fs.String("workspace", "", "workspace id")
 	snapshot := fs.String("snapshot", "", "snapshot id")
+	version := fs.String("version", "", "engine version line, e.g. 18 or 8.4 (default: the recommended one; see db versions)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -308,7 +312,54 @@ func create(ctx context.Context, client *vertracloud.Client, args []string) (any
 	if *description != "" {
 		params.Description = vertracloud.NullableValue(*description)
 	}
+	// Empty is omitted from the body (omitempty), so the recommended line or the
+	// snapshot's line applies.
+	params.Version = strings.TrimSpace(*version)
 	return client.Databases.Create(ctx, params)
+}
+
+// versions lists, per engine, the recommended and available version lines.
+func versions(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
+	fs := flags("db versions")
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	if err := rejectExtra(fs); err != nil {
+		return nil, err
+	}
+	catalog, err := client.Databases.Versions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ui.Presentation{JSON: catalog, Human: presentVersions(catalog)}, nil
+}
+
+// presentVersions orders engines by type id and joins the lines, newest first.
+func presentVersions(catalog vertracloud.DatabaseVersions) []map[string]any {
+	keys := make([]string, 0, len(catalog))
+	for key := range catalog {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, errA := strconv.Atoi(keys[i])
+		b, errB := strconv.Atoi(keys[j])
+		if errA == nil && errB == nil {
+			return a < b
+		}
+		return keys[i] < keys[j]
+	})
+	rows := make([]map[string]any, 0, len(keys))
+	for _, key := range keys {
+		entry := catalog[key]
+		row := map[string]any{"recommended": entry.Recommended, "available": strings.Join(entry.Available, ", ")}
+		if n, err := strconv.Atoi(key); err == nil {
+			row["type"] = float64(n)
+		} else {
+			row["type"] = key
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 func get(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
