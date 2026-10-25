@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/vertracloud/cli/compare/v0.3.1...v0.3.2) (2026-10-25)
+
+
+### Features
+
+* add vertra image commands and database engine versions ([e112f00](https://github.com/vertracloud/cli/commit/e112f00c684dc95249b3c843c8cd2be6087b1dd2))
+
 ## [0.3.1](https://github.com/vertracloud/cli/compare/v0.3.0...v0.3.1) (2026-10-22)
 
 
