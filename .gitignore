@@ -4,3 +4,6 @@ dist/
 CLAUDE.md
 AGENTS.md
 AGENT.md
+
+# Segredos locais nunca entram no repositório público.
+.env*
