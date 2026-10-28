@@ -134,30 +134,70 @@ func isEnvFile(name string) bool { return strings.HasPrefix(name, ".env") }
 type countingWriter struct {
 	w        io.Writer
 	n        int64
+	max      int64 // 0: no cap
+	err      error
 	exceeded bool
 }
 
 func (c *countingWriter) Write(p []byte) (int, error) {
 	c.n += int64(len(p))
-	if c.n > MaxContextBytes {
+	if c.max > 0 && c.n > c.max {
 		c.exceeded = true
-		return 0, ErrContextTooLarge
+		return 0, c.err
 	}
 	return c.w.Write(p)
+}
+
+// PackOptions tunes Pack. The zero value packs everything except .env* files
+// and symlinks, with no size cap and no ignore file.
+type PackOptions struct {
+	// IgnoreFiles are looked up at the root of the folder, in order; the first
+	// one that exists is parsed with Docker's rules. Empty: nothing is ignored.
+	IgnoreFiles []string
+	// RequireDockerfile fails with ErrNoDockerfile when there is no regular
+	// file named exactly Dockerfile at the root, and keeps it whatever the
+	// ignore file says.
+	RequireDockerfile bool
+	// AlwaysSkip lists names (a file or a folder, at any depth) that never go
+	// into the zip, whatever the ignore file says.
+	AlwaysSkip []string
+	// MaxBytes stops the zip as soon as it passes this size, with ErrTooLarge.
+	// 0 means no cap.
+	MaxBytes int64
+	// ErrTooLarge is returned when MaxBytes is passed; default ErrContextTooLarge.
+	ErrTooLarge error
 }
 
 // PackDir zips dir into w for an image build: it honors .dockerignore, always
 // keeps the root Dockerfile, never includes .env* files or symlinks, and stops
 // with ErrContextTooLarge as soon as the zip passes MaxContextBytes.
 func PackDir(dir string, w io.Writer) error {
-	if st, err := os.Lstat(filepath.Join(dir, "Dockerfile")); err != nil || !st.Mode().IsRegular() {
-		return ErrNoDockerfile
+	return Pack(dir, w, PackOptions{IgnoreFiles: []string{".dockerignore"}, RequireDockerfile: true, MaxBytes: MaxContextBytes})
+}
+
+// Pack zips dir into w following o. It never includes .env* files or symlinks.
+func Pack(dir string, w io.Writer, o PackOptions) error {
+	if o.RequireDockerfile {
+		if st, err := os.Lstat(filepath.Join(dir, "Dockerfile")); err != nil || !st.Mode().IsRegular() {
+			return ErrNoDockerfile
+		}
+	}
+	tooLarge := o.ErrTooLarge
+	if tooLarge == nil {
+		tooLarge = ErrContextTooLarge
 	}
 	var set ignoreSet
-	if raw, err := os.ReadFile(filepath.Join(dir, ".dockerignore")); err == nil {
-		set = parseDockerignore(string(raw))
+	for _, name := range o.IgnoreFiles {
+		if raw, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			set = parseDockerignore(string(raw))
+			break
+		}
 	}
-	cw := &countingWriter{w: w}
+	skip := map[string]bool{}
+	for _, name := range o.AlwaysSkip {
+		skip[name] = true
+	}
+	cw := &countingWriter{w: w, max: o.MaxBytes, err: tooLarge}
 	zw := zip.NewWriter(cw)
 	walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -171,13 +211,13 @@ func PackDir(dir string, w io.Writer) error {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if isEnvFile(d.Name()) {
+		if isEnvFile(d.Name()) || skip[d.Name()] {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		keep := rel == "Dockerfile"
+		keep := o.RequireDockerfile && rel == "Dockerfile"
 		if d.IsDir() {
 			if !keep && !set.negates && set.ignored(rel) {
 				return filepath.SkipDir
@@ -210,14 +250,14 @@ func PackDir(dir string, w io.Writer) error {
 		return err
 	})
 	if cw.exceeded {
-		return ErrContextTooLarge
+		return tooLarge
 	}
 	if walkErr != nil {
 		return walkErr
 	}
 	if err := zw.Close(); err != nil {
 		if cw.exceeded {
-			return ErrContextTooLarge
+			return tooLarge
 		}
 		return err
 	}

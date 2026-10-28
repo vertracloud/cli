@@ -20,6 +20,8 @@ import (
 	"github.com/vertracloud/cli/internal/images"
 	"github.com/vertracloud/cli/internal/local"
 	"github.com/vertracloud/cli/internal/resources"
+	"github.com/vertracloud/cli/internal/stacks"
+	"github.com/vertracloud/cli/internal/templates"
 	"github.com/vertracloud/cli/internal/ui"
 	"github.com/vertracloud/sdk-api-go/rest"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
@@ -317,6 +319,24 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			return 0
 		}
 		data, err = images.Run(ctx, client, args[1], args[2:], jsonMode)
+	case "template", "templates":
+		if len(args) < 2 {
+			err = errors.New("missing template command")
+			break
+		}
+		data, err = templates.Run(ctx, client, args[1], args[2:], jsonMode, errOut)
+		var invalid *templates.ValidationError
+		if errors.As(err, &invalid) {
+			// A manifest with problems: print the findings (or the JSON), then fail.
+			emit(out, invalid.Result, jsonMode, locale, args)
+			return 1
+		}
+	case "stack", "stacks":
+		if len(args) < 2 {
+			err = errors.New("missing stack command")
+			break
+		}
+		data, err = stacks.Run(ctx, client, args[1], args[2:], jsonMode, errOut)
 	case "logs":
 		if follows(args[1:]) {
 			if jsonMode {
@@ -527,6 +547,8 @@ var topHelp = []helpSection{
 		{"projects", [3]string{"Lista apps e bancos juntos, com estado", "List apps and databases together, with status", "Lista apps y bases de datos juntas, con estado"}},
 		{"app", [3]string{"Aplicações: deploy, versões e rollback, estado, logs, variáveis, arquivos e rede", "Applications: deploy, releases and rollback, status, logs, env, files and network", "Aplicaciones: deploy, versiones y rollback, estado, logs, variables, archivos y red"}},
 		{"image", [3]string{"Imagens Docker: build, lista, rebuild, logs e apps a partir da imagem", "Docker images: build, list, rebuild, logs and apps from an image", "Imágenes Docker: build, lista, rebuild, logs y apps desde la imagen"}},
+		{"template", [3]string{"Templates: catálogo, validar, usar (deploy), criar privados e links de compartilhamento", "Templates: catalog, validate, use (deploy), create private ones and share links", "Plantillas: catálogo, validar, usar (deploy), crear privadas y enlaces para compartir"}},
+		{"stack", [3]string{"Stacks: grupos de apps, bancos e Blob criados por templates; ver, atualizar e excluir", "Stacks: groups of apps, databases and Blob created by templates; view, update and delete", "Stacks: grupos de apps, bases de datos y Blob creados por plantillas; ver, actualizar y eliminar"}},
 		{"db", [3]string{"Bancos de dados: criar, estado, credenciais", "Databases: create, status, credentials", "Bases de datos: crear, estado, credenciales"}},
 		{"workspace", [3]string{"Workspaces, membros, convites e funções", "Workspaces, members, invites and roles", "Espacios de trabajo, miembros, invitaciones y roles"}},
 		{"snapshot", [3]string{"Cria, baixa e restaura snapshots", "Create, download and restore snapshots", "Crea, descarga y restaura snapshots"}},
@@ -582,6 +604,26 @@ var groupHelp = map[string][]helpEntry{
 		{"deploy <image-id> --name <name> --ram <MB> [--web] [--port N] [--subdomain <s>] [--env K=V]", [3]string{"Cria um app a partir da imagem. --port e --subdomain só com --web", "Create an app from the image. --port and --subdomain need --web", "Crea una app desde la imagen. --port y --subdomain solo con --web"}},
 		{"delete <id> [--yes]", [3]string{"Exclui a imagem e os apps criados a partir dela. Sem --yes, pede para digitar o nome", "Delete the image and the apps created from it. Without --yes, asks you to type the name", "Elimina la imagen y las apps creadas desde ella. Sin --yes, pide escribir el nombre"}},
 	},
+	"template": {
+		{"list [--search <text>] [--category <c>] [--origin vertra|community|private] [--tag <t>] [--fits] [--sort <s>] [--page N] [--limit N] [--workspace <id>]", [3]string{"Lista o catálogo de templates (com --origin private, os seus)", "List the template catalog (with --origin private, your own)", "Lista el catálogo de plantillas (con --origin private, las tuyas)"}},
+		{"info <slug|id>", [3]string{"Detalhes: serviços, perguntas, plano exigido e se cabe na sua conta", "Details: services, questions, required plan and whether it fits your account", "Detalles: servicios, preguntas, plan requerido y si cabe en tu cuenta"}},
+		{"versions <slug|id>", [3]string{"Versões do template", "Template versions", "Versiones de la plantilla"}},
+		{"categories", [3]string{"Categorias e quantos templates cada uma tem", "Categories and how many templates each has", "Categorías y cuántas plantillas tiene cada una"}},
+		{"validate [<folder>]", [3]string{"Confere o vertracloud.template.yaml da pasta (linha de cada problema). Sai com erro se houver problema", "Check the folder's vertracloud.template.yaml (line of each issue). Exits with an error if there is one", "Revisa el vertracloud.template.yaml de la carpeta (línea de cada problema). Sale con error si hay alguno"}},
+		{"deploy <slug> --name <name> [--set id=value] [--service <svc>.<name|ram|subdomain>=<v>] [--version v] [--yes] [--no-wait]", [3]string{"Usa um template: pergunta o que falta (ou use --set e --yes), acompanha o progresso e mostra as saídas (segredos aparecem só uma vez)", "Use a template: asks what is missing (or use --set and --yes), follows the progress and shows the outputs (secrets appear only once)", "Usa una plantilla: pregunta lo que falta (o usa --set y --yes), sigue el progreso y muestra las salidas (los secretos aparecen una sola vez)"}},
+		{"deploy --share <link|token> --name <name> [...]", [3]string{"Usa um template recebido por link de compartilhamento", "Use a template received through a share link", "Usa una plantilla recibida por enlace para compartir"}},
+		{"create [<folder>] [--workspace <id>] [--template <id>] [--changelog <text>]", [3]string{"Empacota a pasta (respeita .vertraignore ou .dockerignore; .env* nunca é enviado; até 100 MB por serviço) e cria o template privado, ou uma versão nova com --template", "Pack the folder (honors .vertraignore or .dockerignore; .env* is never sent; up to 100 MB per service) and create the private template, or a new version with --template", "Empaqueta la carpeta (respeta .vertraignore o .dockerignore; .env* nunca se envía; hasta 100 MB por servicio) y crea la plantilla privada, o una versión nueva con --template"}},
+		{"share <template-id> [--mode use|full_copy] [--max-uses N] [--expires-days N]", [3]string{"Cria um link de compartilhamento; o token aparece só uma vez", "Create a share link; the token is shown only once", "Crea un enlace para compartir; el token se muestra una sola vez"}},
+		{"share list <template-id>", [3]string{"Lista os links do template", "List the template's links", "Lista los enlaces de la plantilla"}},
+		{"share revoke <template-id> <link-id>", [3]string{"Revoga um link", "Revoke a link", "Revoca un enlace"}},
+	},
+	"stack": {
+		{"list [--workspace <id>]", [3]string{"Lista suas stacks", "List your stacks", "Lista tus stacks"}},
+		{"get <id>", [3]string{"Detalhes: membros, ligações e template de origem", "Details: members, connections and source template", "Detalles: miembros, conexiones y plantilla de origen"}},
+		{"update <id> [--check] [--set id=value] [--ram <svc>=<MB>] [--yes] [--no-wait]", [3]string{"Atualiza a stack para a última versão do template (com snapshot de segurança). --check só mostra o que mudaria", "Update the stack to the latest template version (with a safety snapshot). --check only shows what would change", "Actualiza el stack a la última versión de la plantilla (con snapshot de seguridad). --check solo muestra qué cambiaría"}},
+		{"rename <id> [<name>] [--description <text>]", [3]string{"Renomeia a stack e/ou muda a descrição (--description vazio remove)", "Rename the stack and/or change its description (an empty --description removes it)", "Renombra el stack y/o cambia la descripción (--description vacío la elimina)"}},
+		{"delete <id> [--delete-all] [--blob keep|delete] [--yes]", [3]string{"Desfaz a stack (os membros ficam soltos) ou, com --delete-all, exclui também os membros. Sem --yes, pede para digitar o nome", "Dissolve the stack (members stay loose) or, with --delete-all, delete the members too. Without --yes, asks you to type the name", "Deshace el stack (los miembros quedan sueltos) o, con --delete-all, elimina también los miembros. Sin --yes, pide escribir el nombre"}},
+	},
 	"db": {
 		{"list [--workspace <id>] [--filter k=v]", [3]string{"Lista seus bancos de dados", "List your databases", "Lista tus bases de datos"}},
 		{"create --type <postgres|mongo|redis|mysql> [--version <linha>]", [3]string{"Cria um banco de dados. Sem --version, usa a versão recomendada", "Create a database. Without --version, the recommended one is used", "Crea una base de datos. Sin --version, se usa la recomendada"}},
@@ -634,7 +676,7 @@ var groupHelp = map[string][]helpEntry{
 	},
 }
 
-var groupAliases = map[string]string{"apps": "app", "images": "image", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite"}
+var groupAliases = map[string]string{"apps": "app", "images": "image", "templates": "template", "stacks": "stack", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite"}
 
 func printHelp(out io.Writer, args []string, locale string) {
 	var words []string

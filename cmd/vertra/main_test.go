@@ -397,3 +397,64 @@ func TestLifecycleCommandsRunWithYes(t *testing.T) {
 		}
 	}
 }
+
+func TestTemplateAndStackAreInTheHelp(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"--help"}, []string{"template", "stack"}},
+		{[]string{"template", "--help"}, []string{"validate", "deploy", "create", "share"}},
+		{[]string{"stacks", "--help"}, []string{"update", "delete", "--delete-all"}},
+	} {
+		var out, errOut bytes.Buffer
+		if code := run(context.Background(), tc.args, &out, &errOut); code != 0 {
+			t.Fatalf("%v: exit %d", tc.args, code)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(out.String(), want) {
+				t.Errorf("%v: help lacks %q", tc.args, want)
+			}
+		}
+	}
+}
+
+func TestTemplateValidateFailsWithIssuesAndLines(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/templates/validate" {
+			t.Errorf("unexpected API path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"response":{"valid":false,"issues":[{"path":"category","code":"invalid_category","message":"unknown category"}],"required_plan":null,"ram_min_total":null,"services":[]}}`))
+	}))
+	defer server.Close()
+	oldURL := apiBaseURL
+	apiBaseURL = server.URL
+	defer func() { apiBaseURL = oldURL }()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VERTRA_API_KEY", "local-key")
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/vertracloud.template.yaml", []byte("id: demo\nversion: 1.0.0\ncategory: nope\nservices: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if code := run(context.Background(), []string{"template", "validate", dir}, &out, &errOut); code != 1 {
+		t.Fatalf("exit %d, stderr %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "vertracloud.template.yaml:3") || !strings.Contains(out.String(), "invalid_category") {
+		t.Fatalf("stdout:\n%s", out.String())
+	}
+	out.Reset()
+	if code := run(context.Background(), []string{"template", "validate", dir, "--json"}, &out, &errOut); code != 1 {
+		t.Fatalf("json exit %d", code)
+	}
+	var payload struct {
+		Valid  bool `json:"valid"`
+		Issues []struct {
+			Line int `json:"line"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil || payload.Valid || len(payload.Issues) != 1 || payload.Issues[0].Line != 3 {
+		t.Fatalf("json: %s err=%v", out.String(), err)
+	}
+}

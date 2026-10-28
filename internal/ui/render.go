@@ -23,6 +23,10 @@ func RenderPaged(w io.Writer, value any, command, locale string, pageSize int, a
 	if presentation, ok := value.(Presentation); ok {
 		value = presentation.Human
 	}
+	if r, ok := value.(Renderable); ok {
+		r.RenderHuman(w, locale)
+		return
+	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		fmt.Fprintln(w, value)
@@ -167,7 +171,7 @@ func Normalize(command string) string {
 	if len(words) == 0 {
 		return ""
 	}
-	group := map[string]string{"projects": "projects", "project": "projects", "proj": "projects", "apps": "app", "images": "image", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite", "language": "lang", "locale": "lang"}[words[0]]
+	group := map[string]string{"projects": "projects", "project": "projects", "proj": "projects", "apps": "app", "images": "image", "templates": "template", "stacks": "stack", "database": "db", "ws": "workspace", "snapshots": "snapshot", "fav": "favorite", "language": "lang", "locale": "lang"}[words[0]]
 	if group == "" {
 		group = words[0]
 	}
@@ -184,7 +188,7 @@ func Normalize(command string) string {
 			return "link show"
 		}
 		return "link"
-	case "app", "db", "workspace", "snapshot", "folder", "favorite", "auth", "image":
+	case "app", "db", "workspace", "snapshot", "folder", "favorite", "auth", "image", "template", "stack":
 	default:
 		return group
 	}
@@ -212,21 +216,25 @@ func Normalize(command string) string {
 }
 
 var listColumns = map[string][]string{
-	"projects":         {"name", "id", "kind", "status", "cpu", "ram", "runtime", "folder"},
-	"image list":       {"name", "id", "status", "apps", "size", "github", "updated_at"},
-	"app list":         {"name", "id", "status", "cpu", "ram", "language", "domain", "folder"},
-	"db list":          {"name", "id", "type", "version", "status", "cpu", "ram", "folder"},
-	"db versions":      {"type", "recommended", "available"},
-	"app status":       {"name", "id", "status", "cpu", "ram", "uptime"},
-	"db status":        {"name", "id", "status", "cpu", "ram", "storage", "uptime"},
-	"workspace list":   {"name", "id", "members_count", "created_at"},
-	"snapshot list":    {"id", "resource_name", "size", "date"},
-	"folder list":      {"name", "id", "color", "resources"},
-	"favorite list":    {"resource_type", "resource_id", "created_at"},
-	"app env list":     {"key", "value", "note"},
-	"app file list":    {"name", "type", "last_modified"},
-	"app domains list": {"hostname", "id", "status", "ssl_status", "port", "path_prefix", "redirect_to"},
-	"app releases":     {"id", "source", "release_status", "author", "message", "created_at", "rollback", "expires_at"},
+	"projects":            {"name", "id", "kind", "status", "cpu", "ram", "runtime", "folder"},
+	"image list":          {"name", "id", "status", "apps", "size", "github", "updated_at"},
+	"template list":       {"name", "slug", "category", "origin", "version", "plan", "ram"},
+	"template versions":   {"version", "security", "created_at"},
+	"template categories": {"category", "count"},
+	"stack list":          {"name", "id", "status", "members", "ram", "template", "updated_at"},
+	"app list":            {"name", "id", "status", "cpu", "ram", "language", "domain", "folder"},
+	"db list":             {"name", "id", "type", "version", "status", "cpu", "ram", "folder"},
+	"db versions":         {"type", "recommended", "available"},
+	"app status":          {"name", "id", "status", "cpu", "ram", "uptime"},
+	"db status":           {"name", "id", "status", "cpu", "ram", "storage", "uptime"},
+	"workspace list":      {"name", "id", "members_count", "created_at"},
+	"snapshot list":       {"id", "resource_name", "size", "date"},
+	"folder list":         {"name", "id", "color", "resources"},
+	"favorite list":       {"resource_type", "resource_id", "created_at"},
+	"app env list":        {"key", "value", "note"},
+	"app file list":       {"name", "type", "last_modified"},
+	"app domains list":    {"hostname", "id", "status", "ssl_status", "port", "path_prefix", "redirect_to"},
+	"app releases":        {"id", "source", "release_status", "author", "message", "created_at", "rollback", "expires_at"},
 }
 
 // hidden fields are internal bookkeeping that only add noise for humans.
@@ -881,6 +889,9 @@ var actionMessages = map[string][3]string{ // pt, en, es
 	"db reset":           {"Banco de dados redefinido.", "Database reset.", "Base de datos restablecida."},
 	"snapshot create":    {"Snapshot criado.", "Snapshot created.", "Snapshot creado."},
 	"snapshot restore":   {"Snapshot restaurado.", "Snapshot restored.", "Snapshot restaurado."},
+	"stack update":       {"Stack atualizada.", "Stack updated.", "Stack actualizado."},
+	"stack delete":       {"Stack excluída.", "Stack deleted.", "Stack eliminado."},
+	"template delete":    {"Template excluído.", "Template deleted.", "Plantilla eliminada."},
 	"link":               {"Pasta vinculada à aplicação.", "Directory linked to the application.", "Carpeta vinculada a la aplicación."},
 	"unlink":             {"Vínculo removido.", "Link removed.", "Vínculo eliminado."},
 	"auth logout":        {"Sessão encerrada.", "Logged out.", "Sesión cerrada."},

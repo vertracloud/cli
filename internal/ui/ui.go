@@ -20,6 +20,13 @@ var Locale = "en"
 // Presentation keeps machine output unchanged while allowing richer human output.
 type Presentation struct{ JSON, Human any }
 
+// Renderable is a Human value that prints itself. It is for output that the
+// generic table/detail renderer would get wrong, such as a secret shown once
+// (the generic renderer redacts anything named token or secret).
+type Renderable interface {
+	RenderHuman(w io.Writer, locale string)
+}
+
 func IsInteractive() bool { return stdinTTY() && stdoutTTY() }
 
 func stdinTTY() bool {
