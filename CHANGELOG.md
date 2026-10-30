@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.3](https://github.com/vertracloud/cli/compare/v0.3.2...v0.3.3) (2026-10-30)
+
+
+### Features
+
+* add templates and stacks commands ([c4761ed](https://github.com/vertracloud/cli/commit/c4761edb55cd362d281315fce4b5e998917f6744))
+
+
+### Bug Fixes
+
+* **templates:** neutral network mode descriptions ([46d00d1](https://github.com/vertracloud/cli/commit/46d00d1c7cf3c6afbc897fec547aa57badb9a6c7))
+
 ## [0.3.2](https://github.com/vertracloud/cli/compare/v0.3.1...v0.3.2) (2026-10-25)
 
 
