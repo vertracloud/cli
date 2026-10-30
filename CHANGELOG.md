@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/vertracloud/cli/compare/v0.3.3...v0.3.4) (2026-10-30)
+
+
+### Bug Fixes
+
+* **deps:** build against sdk-api-go v0.3.3 ([fc2584e](https://github.com/vertracloud/cli/commit/fc2584e246c0d042c3b8663789fb1fcee76c2525))
+
 ## [0.3.3](https://github.com/vertracloud/cli/compare/v0.3.2...v0.3.3) (2026-10-30)
 
 
