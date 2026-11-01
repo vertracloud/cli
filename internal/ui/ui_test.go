@@ -64,7 +64,7 @@ func TestLoginHumanOutputSummarizesAccount(t *testing.T) {
 	Render(&out, map[string]any{
 		"name":         "Teste",
 		"applications": []any{map[string]any{"name": "private-app"}},
-		"plan":         map[string]any{"name": "pro"},
+		"plan":         map[string]any{"name": "pro-4"},
 	}, "auth login", "pt")
 	if got := out.String(); got != "✓ Login realizado como Teste.\n" {
 		t.Fatalf("login output = %q", got)
@@ -80,7 +80,7 @@ func TestWhoamiHumanOutputSummarizesAccount(t *testing.T) {
 }
 
 func TestPlanLabelIsReadable(t *testing.T) {
-	for slug, want := range map[string]string{"starter-1": "Starter 1", "starter-2": "Starter 2", "pro-4": "Pro 4", "business-12": "Business 12", "enterprise-32": "Enterprise 32", "economy": "Economy"} {
+	for slug, want := range map[string]string{"starter-1": "Starter 1", "starter-2": "Starter 2", "pro-4": "Pro 4", "business-12": "Business 12", "enterprise-32": "Enterprise 32"} {
 		if got := planLabel(slug); got != want {
 			t.Fatalf("planLabel(%q) = %v, want %q", slug, got, want)
 		}
@@ -94,7 +94,7 @@ func TestPlanErrorsDoNotNameAPlan(t *testing.T) {
 	for _, locale := range []string{"pt", "es", "en"} {
 		for _, key := range []string{"err_rollback_plan", "err_zero_downtime_plan", "err_auto_rollback_plan"} {
 			got := strings.ToLower(text(locale, key))
-			for _, name := range []string{"starter", "pro", "business", "enterprise", "intermediary", "scale", "economy"} {
+			for _, name := range []string{"starter", "pro", "business", "enterprise"} {
 				if strings.Contains(got, name) {
 					t.Fatalf("%s/%s = %q names plan %q", locale, key, got, name)
 				}
@@ -107,7 +107,7 @@ func TestAppListRendersOnlyUsefulColumns(t *testing.T) {
 	var out bytes.Buffer
 	RenderPaged(&out, []any{map[string]any{
 		"name": "demo", "id": "app-1", "ram": 512, "status": "down", "language": "go",
-		"subdomain": "demo.vertraweb.app", "domains": []any{}, "owner_id": "private-owner", "owner_plan": "pro",
+		"subdomain": "demo.vertraweb.app", "domains": []any{}, "owner_id": "private-owner", "owner_plan": "pro-4",
 		"created_at": "2026-09-22T12:00:00Z", "start_command": nil,
 	}}, "app list", "pt", 5, false)
 	got := out.String()
@@ -134,7 +134,7 @@ func TestDatabaseListUsesReadableTypeAndMemory(t *testing.T) {
 
 func TestAppInfoOmitsInactiveFeaturesAndFormatsMemoryAndSubdomain(t *testing.T) {
 	var out bytes.Buffer
-	Render(&out, map[string]any{"name": "next-build", "ram": float64(612), "subdomain": nil, "domains": []any{}, "owner_plan": "pro", "shield_cooldown": nil}, "app info", "pt")
+	Render(&out, map[string]any{"name": "next-build", "ram": float64(612), "subdomain": nil, "domains": []any{}, "owner_plan": "pro-4", "shield_cooldown": nil}, "app info", "pt")
 	got := out.String()
 	for _, want := range []string{"612 MB", "Não configurado", "Domínios"} {
 		if !strings.Contains(got, want) {

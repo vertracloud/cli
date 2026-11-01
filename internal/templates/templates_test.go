@@ -303,7 +303,7 @@ func TestValidateInvalidReturnsIssuesWithLines(t *testing.T) {
 
 func TestValidateValidPrintsSummary(t *testing.T) {
 	dir := tree(t, map[string]string{"vertracloud.template.yaml": manifestYAML})
-	plan, ram := vertracloud.UserPlanName("starter"), 512
+	plan, ram := vertracloud.PlanName("starter-1"), 512
 	f := &fakeTemplates{validate: vertracloud.TemplateValidation{Valid: true, RequiredPlan: &plan, RAMMinTotal: &ram}}
 	got, err := Run(context.Background(), newClient(f), "validate", []string{dir}, false, io.Discard)
 	if err != nil {
