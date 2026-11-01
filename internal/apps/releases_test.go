@@ -82,7 +82,7 @@ func TestRollbackKnownErrorsAreLocalized(t *testing.T) {
 	apps.releases.rollbackErr = &rest.APIError{Status: 403, Code: "PLAN_DOES_NOT_SUPPORT_ROLLBACK", Message: "x"}
 	_, err := run(t, apps, "rollback", "app-1", "rel-1", "--yes")
 	var apiErr *rest.APIError
-	if !errors.As(err, &apiErr) || apiErr.Code != "PLAN_DOES_NOT_SUPPORT_ROLLBACK" || !strings.Contains(apiErr.Message, "Pro") || apiErr.Message == "x" {
+	if !errors.As(err, &apiErr) || apiErr.Code != "PLAN_DOES_NOT_SUPPORT_ROLLBACK" || !strings.Contains(apiErr.Message, "seu plano") || apiErr.Message == "x" {
 		t.Fatalf("err = %v", err)
 	}
 	apps.releases.rollbackErr = &rest.APIError{Status: 403, Code: "API_KEY_SCOPE_DENIED", Message: "x"}

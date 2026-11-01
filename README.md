@@ -154,13 +154,13 @@ vertra app releases log [<id>] <release-id>         # log of a deploy that faile
 vertra app rollback [<id>] <release-id> [--env]     # go back to that version and restart
 ```
 
-`rollback` is available from the Pro plan. It shows what will happen and asks before it runs; pass `--yes` in automation. With `--env` it also restores the environment variables saved with that version: it lists only their names and whether each one would be added, modified or removed, never the values, and needs an API key with the `apps:envs` scope. Without `--env` your current variables stay as they are.
+`rollback` is available on every plan. It shows what will happen and asks before it runs; pass `--yes` in automation. With `--env` it also restores the environment variables saved with that version: it lists only their names and whether each one would be added, modified or removed, never the values, and needs an API key with the `apps:envs` scope. Without `--env` your current variables stay as they are.
 
 ### Deploy behavior
 
 ```bash
-vertra app config [<id>] --zero-downtime auto|on|off   # on: Enterprise plan
-vertra app config [<id>] --auto-rollback on|off        # Intermediary plan and up
+vertra app config [<id>] --zero-downtime auto|on|off   # on: depends on the plan
+vertra app config [<id>] --auto-rollback on|off        # depends on the plan
 vertra app config [<id>] --health-path /healthz        # or --clear-health-path
 ```
 

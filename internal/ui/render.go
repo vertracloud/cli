@@ -809,10 +809,24 @@ func duration(d time.Duration) string {
 	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
+// planLabel turns a plan slug ("starter-1") into its readable name ("Starter 1"); anything else passes through.
+func planLabel(name any) any {
+	slug, ok := name.(string)
+	if !ok || slug == "" {
+		return name
+	}
+	head, size, _ := strings.Cut(slug, "-")
+	label := strings.ToUpper(head[:1]) + head[1:]
+	if size != "" {
+		label += " " + size
+	}
+	return label
+}
+
 func whoami(w io.Writer, account map[string]any, locale string) {
 	summary := map[string]any{"name": account["name"], "email": account["email"]}
 	if plan, ok := account["plan"].(map[string]any); ok {
-		summary["plan"] = plan["name"]
+		summary["plan"] = planLabel(plan["name"])
 	}
 	for _, key := range []string{"applications", "databases"} {
 		if list, ok := account[key].([]any); ok {
@@ -1001,14 +1015,14 @@ var translations = map[string]map[string]string{
 		"rollback_env_kept": "As variáveis de ambiente continuam como estão.", "rollback_env_none": "Nenhuma variável de ambiente muda.",
 		"rollback_env_changes": "Variáveis de ambiente que mudam (só os nomes):", "rollback_confirm": "Voltar para esta versão?",
 		"env_added": "adicionada", "env_modified": "alterada", "env_removed": "removida",
-		"err_rollback_plan":         "Voltar para uma versão anterior está disponível a partir do plano Pro.",
+		"err_rollback_plan":         "Voltar para uma versão anterior não está disponível no seu plano.",
 		"err_release_expired":       "O código desta versão não é mais guardado. Escolha uma versão mais recente.",
 		"err_release_active":        "Esta já é a versão em execução.",
 		"err_restore_cooldown":      "Uma restauração recente deixou esta aplicação em espera. Tente de novo mais tarde.",
 		"err_operation_in_progress": "A aplicação está em outra operação. Aguarde terminar e tente de novo.",
 		"err_scope_envs":            "Sua chave precisa do escopo apps:envs para voltar as variáveis de ambiente.",
-		"err_zero_downtime_plan":    "Zero downtime sempre ligado está disponível no plano Enterprise.",
-		"err_auto_rollback_plan":    "O rollback automático está disponível a partir do plano Intermediary.",
+		"err_zero_downtime_plan":    "O seu plano não inclui zero downtime sempre ligado.",
+		"err_auto_rollback_plan":    "O seu plano não inclui rollback automático.",
 	},
 	"es": {
 		"empty": "No hay resultados.", "status": "Estado", "id": "ID", "name": "Nombre", "created_at": "Creado", "updated_at": "Actualizado",
@@ -1051,14 +1065,14 @@ var translations = map[string]map[string]string{
 		"rollback_env_kept": "Las variables de entorno se quedan como están.", "rollback_env_none": "Ninguna variable de entorno cambia.",
 		"rollback_env_changes": "Variables de entorno que cambian (solo los nombres):", "rollback_confirm": "¿Volver a esta versión?",
 		"env_added": "añadida", "env_modified": "modificada", "env_removed": "eliminada",
-		"err_rollback_plan":         "Volver a una versión anterior está disponible desde el plan Pro.",
+		"err_rollback_plan":         "Volver a una versión anterior no está disponible en tu plan.",
 		"err_release_expired":       "El código de esta versión ya no se conserva. Elige una versión más reciente.",
 		"err_release_active":        "Esta ya es la versión en ejecución.",
 		"err_restore_cooldown":      "Una restauración reciente dejó esta aplicación en espera. Inténtalo de nuevo más tarde.",
 		"err_operation_in_progress": "La aplicación está en otra operación. Espera a que termine e inténtalo de nuevo.",
 		"err_scope_envs":            "Tu clave necesita el alcance apps:envs para volver las variables de entorno.",
-		"err_zero_downtime_plan":    "Zero downtime siempre activo está disponible en el plan Enterprise.",
-		"err_auto_rollback_plan":    "El rollback automático está disponible desde el plan Intermediary.",
+		"err_zero_downtime_plan":    "Tu plan no incluye zero downtime siempre activo.",
+		"err_auto_rollback_plan":    "Tu plan no incluye rollback automático.",
 	},
 	"en": {
 		"empty": "No results.", "status": "Status", "id": "ID", "name": "Name", "created_at": "Created", "updated_at": "Updated",
@@ -1101,14 +1115,14 @@ var translations = map[string]map[string]string{
 		"rollback_env_kept": "Environment variables stay as they are.", "rollback_env_none": "No environment variable changes.",
 		"rollback_env_changes": "Environment variables that change (names only):", "rollback_confirm": "Go back to this version?",
 		"env_added": "added", "env_modified": "modified", "env_removed": "removed",
-		"err_rollback_plan":         "Rolling back to a previous version is available from the Pro plan.",
+		"err_rollback_plan":         "Rolling back to a previous version is not available on your plan.",
 		"err_release_expired":       "The code of this version is no longer kept. Pick a more recent version.",
 		"err_release_active":        "This is already the running version.",
 		"err_restore_cooldown":      "A recent restore put this application on hold. Try again later.",
 		"err_operation_in_progress": "The application is busy with another operation. Wait for it to finish and try again.",
 		"err_scope_envs":            "Your key needs the apps:envs scope to restore environment variables.",
-		"err_zero_downtime_plan":    "Always-on zero downtime is available on the Enterprise plan.",
-		"err_auto_rollback_plan":    "Automatic rollback is available from the Intermediary plan.",
+		"err_zero_downtime_plan":    "Your plan does not include always-on zero downtime.",
+		"err_auto_rollback_plan":    "Your plan does not include automatic rollback.",
 	},
 }
 
