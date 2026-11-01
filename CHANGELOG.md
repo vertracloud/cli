@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.5](https://github.com/vertracloud/cli/compare/v0.3.4...v0.3.5) (2026-11-01)
+
+
+### Features
+
+* show readable plan names and drop fixed plan names from messages ([4a0d622](https://github.com/vertracloud/cli/commit/4a0d6223b7d8e5ba8a5838119c436930435ed3a0))
+
+
+### Bug Fixes
+
+* **deps:** bump sdk-api-go to v0.4.0 ([bf87af3](https://github.com/vertracloud/cli/commit/bf87af3e93d22ed3f993dcd22b54b37c582dbb1a))
+
 ## [0.3.4](https://github.com/vertracloud/cli/compare/v0.3.3...v0.3.4) (2026-10-30)
 
 
