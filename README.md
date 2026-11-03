@@ -57,7 +57,7 @@ Your key is stored in `~/.vertracloud/config.json`, readable only by your user. 
 | Command | What it does |
 |---|---|
 | `vertra auth login\|whoami\|logout` | Connect and inspect your account. |
-| `vertra app ...` | List, inspect, start, stop, restart, deploy, configure and delete applications; releases and rollback; logs, metrics, environment variables, files and domains. |
+| `vertra app ...` | List, inspect, start, stop, restart, deploy, configure and delete applications; releases and rollback; logs, metrics, Web Analytics (`app analytics`, `errors`, `performance`, `requests`), environment variables, files and domains. |
 | `vertra image ...` | Docker images: build from a folder or `.zip`, list, inspect, rename and describe, rebuild, build logs, create apps from an image and delete. |
 | `vertra template ...` | Templates: browse the catalog, check a manifest folder, use a template (deploy), create private templates and share links. |
 | `vertra stack ...` | Stacks (apps, databases and Blob folders created together by a template): list, inspect, rename, update to a newer template version and delete. |

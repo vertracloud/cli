@@ -67,6 +67,8 @@ func RunWithOptions(ctx context.Context, client *vertracloud.Client, command str
 		return env(ctx, client, args)
 	case "file":
 		return file(ctx, client, args, jsonMode)
+	case "analytics":
+		return analytics(ctx, client, args)
 	case "network":
 		return network(ctx, client, args)
 	case "domains":

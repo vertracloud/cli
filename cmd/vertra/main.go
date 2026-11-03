@@ -578,6 +578,10 @@ var groupHelp = map[string][]helpEntry{
 		{"status [<id>|--all]", [3]string{"CPU, memória e tempo ativo", "CPU, memory and uptime", "CPU, memoria y tiempo activo"}},
 		{"logs [<id>] [--follow]", [3]string{"Logs, ou acompanha em tempo real", "Logs, or follow them live", "Logs, o síguelos en vivo"}},
 		{"metrics [<id>] [--range 10m|30m|24h]", [3]string{"Histórico de uso", "Usage history", "Historial de uso"}},
+		{"analytics [<id>] [--start <RFC3339>] [--end <RFC3339>] [--compare] [--compare-start <RFC3339>] [--breakdowns a,b] [--limit N] [filtros]", [3]string{"Tráfego do site: visitas, requisições, erros e os principais valores por país, rota, origem e mais. Sem --start/--end, as últimas 24 h. --compare traz o período anterior; --compare-start escolhe o início do período comparado (mesmo tamanho da janela). Filtros: --country --edge-location --host --path --method --status --protocol --device --os --browser --referer --asn --ip --content-type --cache-status --bot", "Site traffic: visits, requests, errors and the top values by country, path, referer and more. Without --start/--end, the last 24 h. --compare adds the previous period; --compare-start picks where the compared period starts (same length as the window). Filters: --country --edge-location --host --path --method --status --protocol --device --os --browser --referer --asn --ip --content-type --cache-status --bot", "Tráfico del sitio: visitas, solicitudes, errores y los valores principales por país, ruta, origen y más. Sin --start/--end, las últimas 24 h. --compare trae el período anterior; --compare-start elige el inicio del período comparado (mismo tamaño que la ventana). Filtros: --country --edge-location --host --path --method --status --protocol --device --os --browser --referer --asn --ip --content-type --cache-status --bot"}},
+		{"analytics errors [<id>] [--include-4xx] [--compare] [--compare-start <RFC3339>]", [3]string{"Erros do site por status e rota (só 5xx; --include-4xx soma os 4xx). Aceita a janela e os filtros de analytics", "Site errors by status and path (5xx only; --include-4xx adds 4xx). Takes the analytics window and filters", "Errores del sitio por status y ruta (solo 5xx; --include-4xx suma los 4xx). Acepta la ventana y los filtros de analytics"}},
+		{"analytics performance [<id>] [--compare] [--compare-start <RFC3339>]", [3]string{"Latência p50/p95/p99 na borda e no container, rotas mais lentas, por país e colo (depende do plano)", "Edge and container p50/p95/p99 latency, slowest paths, by country and edge location (depends on the plan)", "Latencia p50/p95/p99 en el borde y en el contenedor, rutas más lentas, por país y ubicación (depende del plan)"}},
+		{"analytics requests [<id>] [--order asc|desc] [--limit N] [--cursor <c>]", [3]string{"Log de requisições, uma página por vez (depende do plano); a próxima página vem indicada no fim", "Request log, one page at a time (depends on the plan); the next page is shown at the end", "Registro de solicitudes, una página a la vez (depende del plan); la página siguiente se indica al final"}},
 		{"start|stop [<id>]", [3]string{"Liga ou desliga a aplicação", "Start or stop the application", "Enciende o apaga la aplicación"}},
 		{"restart [<id>] [--reinstall] [--force-build]", [3]string{"Reinicia a aplicação", "Restart the application", "Reinicia la aplicación"}},
 		{"upload [--name --memory --main]", [3]string{"Cria uma aplicação a partir desta pasta", "Create an application from this directory", "Crea una aplicación desde esta carpeta"}},
@@ -940,7 +944,11 @@ func fail(out io.Writer, jsonMode bool, code string, err error) int {
 		_ = json.NewEncoder(out).Encode(map[string]any{"error": map[string]string{"code": code, "message": err.Error()}})
 		return 1
 	}
-	ui.Failure(out, message, errorHint(code, apiErr))
+	hint := errorHint(code, apiErr)
+	if analyticsMessage, analyticsHint, ok := analyticsFailure(err, apiErr); ok {
+		message, hint = analyticsMessage, analyticsHint
+	}
+	ui.Failure(out, message, hint)
 	return 1
 }
 

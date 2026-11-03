@@ -269,6 +269,7 @@ type fakeApps struct {
 	stream      *vertracloud.ApplicationRealtimeEventStream
 	files       fakeFiles
 	releases    fakeReleases
+	analytics   fakeAnalytics
 	domains     fakeDomains
 	configBody  *vertracloud.ApplicationUpdateConfigBody
 	configErr   error
@@ -341,12 +342,13 @@ func (f *fakeApps) Delete(_ context.Context, id string, _ ...rest.RequestOpt) er
 	f.deleted = id
 	return nil
 }
-func (f *fakeApps) Deploys() vertracloud.AppsDeploysService   { return fakeDeploys{} }
-func (f *fakeApps) Network() vertracloud.AppsNetworkService   { return &f.network }
-func (f *fakeApps) Domains() vertracloud.AppsDomainsService   { return &f.domains }
-func (f *fakeApps) Envs() vertracloud.AppsEnvsService         { return fakeEnvs{} }
-func (f *fakeApps) Releases() vertracloud.AppsReleasesService { return &f.releases }
-func (f *fakeApps) Files() vertracloud.AppsFilesService       { return &f.files }
+func (f *fakeApps) Deploys() vertracloud.AppsDeploysService     { return fakeDeploys{} }
+func (f *fakeApps) Network() vertracloud.AppsNetworkService     { return &f.network }
+func (f *fakeApps) Domains() vertracloud.AppsDomainsService     { return &f.domains }
+func (f *fakeApps) Envs() vertracloud.AppsEnvsService           { return fakeEnvs{} }
+func (f *fakeApps) Releases() vertracloud.AppsReleasesService   { return &f.releases }
+func (f *fakeApps) Files() vertracloud.AppsFilesService         { return &f.files }
+func (f *fakeApps) Analytics() vertracloud.AppsAnalyticsService { return &f.analytics }
 
 type fakeDeploys struct{}
 
