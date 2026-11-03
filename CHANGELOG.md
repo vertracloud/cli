@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.6](https://github.com/vertracloud/cli/compare/v0.3.5...v0.3.6) (2026-11-03)
+
+
+### Features
+
+* add web analytics commands ([c9cf5a7](https://github.com/vertracloud/cli/commit/c9cf5a7f8cdc5e6e3ff873992364b43ea6a99d92))
+
+
+### Bug Fixes
+
+* **deps:** bump sdk-api-go to v0.4.1 ([6bc5d63](https://github.com/vertracloud/cli/commit/6bc5d63882fbbd9d7ff5b643e48f5ddea2f077f9))
+
 ## [0.3.5](https://github.com/vertracloud/cli/compare/v0.3.4...v0.3.5) (2026-11-01)
 
 
