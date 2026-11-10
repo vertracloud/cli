@@ -10,6 +10,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -36,6 +38,13 @@ var (
 
 // Run executes one `image` command and returns the data to render.
 func Run(ctx context.Context, client *vertracloud.Client, command string, args []string, jsonMode bool) (any, error) {
+	return RunWithREST(ctx, client, nil, command, args, jsonMode)
+}
+
+// RunWithREST is Run with the raw REST client, which `rebuild` without a
+// context uses for the route the SDK client does not wrap. With a nil rc that
+// form of rebuild fails; every other command works as in Run.
+func RunWithREST(ctx context.Context, client *vertracloud.Client, rc rest.Client, command string, args []string, jsonMode bool) (any, error) {
 	if client == nil || client.Images == nil {
 		return nil, errors.New("images: SDK client is unavailable")
 	}
@@ -55,7 +64,7 @@ func Run(ctx context.Context, client *vertracloud.Client, command string, args [
 	case "rename":
 		data, err = rename(ctx, client, args)
 	case "rebuild":
-		data, err = rebuild(ctx, client, args, jsonMode)
+		data, err = rebuild(ctx, client, rc, args, jsonMode)
 	case "delete", "remove", "rm":
 		data, err = remove(ctx, client, args, jsonMode)
 	case "logs":
@@ -297,9 +306,13 @@ func rename(ctx context.Context, client *vertracloud.Client, args []string) (any
 	return client.Images.Update(ctx, pos[0], vertracloud.ImageUpdateBody{Name: &name}, workspaceOpts(*workspace)...)
 }
 
-func rebuild(ctx context.Context, client *vertracloud.Client, args []string, jsonMode bool) (any, error) {
+// rebuild has two modes. With --context it uploads that folder or zip and
+// rebuilds from it. Without it nothing is uploaded: the API rebuilds from the
+// current source (the tip of the linked GitHub branch, or the stored context
+// of the latest build). The follow-up after the request is the same.
+func rebuild(ctx context.Context, client *vertracloud.Client, rc rest.Client, args []string, jsonMode bool) (any, error) {
 	f := newFlags("image rebuild")
-	contextPath := f.String("context", ".", "folder or .zip with the Dockerfile")
+	contextPath := f.String("context", "", "folder or .zip with the Dockerfile (omit to rebuild from the current source)")
 	workspace := f.String("workspace", "", "workspace id")
 	pos, err := parse(f, args, map[string]bool{"--context": true, "--workspace": true}, nil)
 	if err != nil {
@@ -309,21 +322,45 @@ func rebuild(ctx context.Context, client *vertracloud.Client, args []string, jso
 	if err != nil {
 		return nil, err
 	}
-	stop := spin(jsonMode, "pack")
-	src, err := OpenContext(*contextPath)
-	stop()
-	if err != nil {
-		return nil, err
-	}
-	defer src.Close()
-	stop = spin(jsonMode, "upload")
-	image, err := client.Images.Rebuild(ctx, id, vertracloud.ImageRebuildParams{File: src.Reader, FileName: src.Name, WorkspaceID: *workspace})
-	stop()
-	if err != nil {
-		return nil, err
+	var image vertracloud.CustomImage
+	if *contextPath == "" {
+		if rc == nil {
+			return nil, errors.New("images: REST client is unavailable")
+		}
+		stop := spin(jsonMode, "rebuild_source")
+		image, err = rebuildFromSource(ctx, rc, id, *workspace)
+		stop()
+		if err != nil {
+			return nil, err
+		}
+		sourceHint(jsonMode, "source_current")
+	} else {
+		stop := spin(jsonMode, "pack")
+		src, err := OpenContext(*contextPath)
+		stop()
+		if err != nil {
+			return nil, err
+		}
+		defer src.Close()
+		stop = spin(jsonMode, "upload")
+		image, err = client.Images.Rebuild(ctx, id, vertracloud.ImageRebuildParams{File: src.Reader, FileName: src.Name, WorkspaceID: *workspace})
+		stop()
+		if err != nil {
+			return nil, err
+		}
+		sourceHint(jsonMode, "source_upload")
 	}
 	followHint(jsonMode, image.ID)
 	return image, nil
+}
+
+// rebuildFromSource calls POST /v1/images/:id/rebuild: no body, optional workspace.
+func rebuildFromSource(ctx context.Context, rc rest.Client, id, workspace string) (vertracloud.CustomImage, error) {
+	data, err := rc.Do(ctx, http.MethodPost, "/v1/images/"+url.PathEscape(id)+"/rebuild", nil, nil, "", workspaceOpts(workspace)...)
+	if err != nil {
+		return vertracloud.CustomImage{}, err
+	}
+	return rest.DecodeJSON[vertracloud.CustomImage](data)
 }
 
 func remove(ctx context.Context, client *vertracloud.Client, args []string, jsonMode bool) (any, error) {
@@ -508,6 +545,13 @@ func followHint(jsonMode bool, id string) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, ui.Dim(fmt.Sprintf(text("follow_hint"), id)))
+}
+
+func sourceHint(jsonMode bool, key string) {
+	if jsonMode {
+		return
+	}
+	fmt.Fprintln(os.Stderr, ui.Dim(text(key)))
 }
 
 func spin(jsonMode bool, action string) func() {

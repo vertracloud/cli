@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -240,6 +242,100 @@ func TestRebuildUploadsGivenZipAsIs(t *testing.T) {
 	}
 	if im.rebuiltID != "img-1" || im.rebuilt.FileName != "ctx.zip" || string(im.uploaded) != "PK-not-really" {
 		t.Fatalf("id=%q params=%+v", im.rebuiltID, im.rebuilt)
+	}
+}
+
+// fakeREST is a real REST client pointed at a local test server that records
+// the request `rebuild` without a context sends.
+type fakeREST struct {
+	rest.Client
+	method, path, rawQuery, contentType string
+	body                                []byte
+	calls                               int
+	status                              int
+	reply                               string
+}
+
+func newFakeREST(t *testing.T, status int, reply string) *fakeREST {
+	t.Helper()
+	f := &fakeREST{status: status, reply: reply}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.calls++
+		f.method, f.path, f.rawQuery, f.contentType = r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Get("Content-Type")
+		f.body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(f.status)
+		_, _ = io.WriteString(w, f.reply)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := rest.NewClient("test-key", rest.WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Client = c
+	return f
+}
+
+func TestRebuildWithoutContextCallsTheSourceRoute(t *testing.T) {
+	im := &fakeImages{}
+	rc := newFakeREST(t, 202, `{"response":{"id":"img-1","status":"building"}}`)
+	data, err := RunWithREST(context.Background(), newClient(im), rc, "rebuild", []string{"img-1", "--workspace", "ws-7"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc.calls != 1 || rc.method != http.MethodPost || rc.path != "/v1/images/img-1/rebuild" {
+		t.Fatalf("call: %d %s %s", rc.calls, rc.method, rc.path)
+	}
+	if len(rc.body) != 0 || rc.contentType != "" {
+		t.Fatalf("expected no body: %q %q", rc.body, rc.contentType)
+	}
+	if rc.rawQuery != "workspace_id=ws-7" {
+		t.Fatalf("query = %q", rc.rawQuery)
+	}
+	if im.rebuiltID != "" {
+		t.Fatal("must not use the upload route")
+	}
+	if image, ok := data.(vertracloud.CustomImage); !ok || image.ID != "img-1" || image.Status != vertracloud.CustomImageStatusBuilding {
+		t.Fatalf("data = %#v", data)
+	}
+}
+
+func TestRebuildWithoutContextOmitsWorkspaceWhenNotGiven(t *testing.T) {
+	rc := newFakeREST(t, 202, `{"response":{"id":"img-1","status":"building"}}`)
+	if _, err := RunWithREST(context.Background(), newClient(&fakeImages{}), rc, "rebuild", []string{"img-1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if rc.rawQuery != "" {
+		t.Fatalf("query = %q", rc.rawQuery)
+	}
+}
+
+func TestRebuildWithoutContextFriendlyError(t *testing.T) {
+	rc := newFakeREST(t, 409, `{"code":"IMAGE_TEMPLATE_ONLY","message":"raw"}`)
+	_, err := RunWithREST(context.Background(), newClient(&fakeImages{}), rc, "rebuild", []string{"img-1"}, true)
+	var apiErr *rest.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "IMAGE_TEMPLATE_ONLY" || apiErr.Message == "raw" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRebuildWithoutContextNeedsTheRESTClient(t *testing.T) {
+	if _, err := Run(context.Background(), newClient(&fakeImages{}), "rebuild", []string{"img-1"}, true); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestRebuildWithContextDoesNotCallTheSourceRoute(t *testing.T) {
+	zp := t.TempDir() + "/ctx.zip"
+	if err := os.WriteFile(zp, []byte("PK"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rc := newFakeREST(t, 202, `{}`)
+	if _, err := RunWithREST(context.Background(), newClient(&fakeImages{}), rc, "rebuild", []string{"img-1", "--context", zp}, true); err != nil {
+		t.Fatal(err)
+	}
+	if rc.calls != 0 {
+		t.Fatal("source route called")
 	}
 }
 
