@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.7](https://github.com/vertracloud/cli/compare/v0.3.6...v0.3.7) (2026-11-11)
+
+
+### Features
+
+* **images:** rebuild an image without uploading a new context ([6f84b06](https://github.com/vertracloud/cli/commit/6f84b06711729875db773f05d58fdbcc62c5230b))
+
+
+### Bug Fixes
+
+* **images:** keep uploading the current folder by default; rebuild from source with --from-source ([ce43f26](https://github.com/vertracloud/cli/commit/ce43f26634fa6fee16bc9e25b8bda53655a2a6d0))
+
 ## [0.3.6](https://github.com/vertracloud/cli/compare/v0.3.5...v0.3.6) (2026-11-03)
 
 
