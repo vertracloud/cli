@@ -82,7 +82,7 @@ vertra image list [--workspace <id>]
 vertra image get <id>
 vertra image update <id> [--name <name>] [--description <text>]
 vertra image rename <id> <name>
-vertra image rebuild <id> [--context <folder|.zip>] [--workspace <id>]
+vertra image rebuild <id> [--context <folder|.zip>] [--from-source] [--workspace <id>]
 vertra image logs <id> [--follow] [--version <id>]
 vertra image deploy <image-id> --name my-app --ram 512 [--web] [--port 3000] [--subdomain my-app] [--env KEY=VALUE]
 vertra image delete <id> [--yes]
@@ -90,7 +90,7 @@ vertra image delete <id> [--yes]
 
 `--context` takes a folder or a `.zip` (default: the current folder). A folder is packed for you: `.dockerignore` is honored (patterns, `!` exceptions and comments), the root `Dockerfile` is always kept, `.env*` files are never sent (not even with `!.env`) and symlinks are skipped. A `.zip` is sent as it is, and the server filters out `.env`. The CLI refuses a context over 100 MB before uploading anything. `build` and `rebuild` return as soon as the build starts: follow it with `vertra image logs <id> --follow`.
 
-`image rebuild` has two forms. With `--context` it replaces the context with the folder or `.zip` you give. Without it nothing is uploaded and the API rebuilds from the current source: the tip of the linked GitHub branch, or the stored context of the latest build (even one that failed, so it is also how you retry a failed build). Both count toward the hourly deploy limit and both are refused while another build of the image is running. Apps restart after a rebuild only when the image has `auto_update_apps` on.
+`image rebuild` has two forms. By default it uploads the current folder (or the folder or `.zip` given with `--context`) and replaces the context, as before. With `--from-source` nothing is uploaded and the API rebuilds from the current source: the tip of the linked GitHub branch, or the stored context of the latest build (even one that failed, so it is also how you retry a failed build). `--from-source` cannot be combined with `--context`. Both forms count toward the hourly deploy limit and both are refused while another build of the image is running. Apps restart after a rebuild only when the image has `auto_update_apps` on.
 
 `--description` (up to 128 characters) is optional. `image update` renames the image and/or changes its description without building anything (apps keep running); an empty `--description ""` removes the description, and `image rename <id> <name>` is a shortcut for `update --name`. A name already used by another of your images is refused.
 

@@ -279,7 +279,7 @@ func newFakeREST(t *testing.T, status int, reply string) *fakeREST {
 func TestRebuildWithoutContextCallsTheSourceRoute(t *testing.T) {
 	im := &fakeImages{}
 	rc := newFakeREST(t, 202, `{"response":{"id":"img-1","status":"building"}}`)
-	data, err := RunWithREST(context.Background(), newClient(im), rc, "rebuild", []string{"img-1", "--workspace", "ws-7"}, true)
+	data, err := RunWithREST(context.Background(), newClient(im), rc, "rebuild", []string{"img-1", "--from-source", "--workspace", "ws-7"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestRebuildWithoutContextCallsTheSourceRoute(t *testing.T) {
 
 func TestRebuildWithoutContextOmitsWorkspaceWhenNotGiven(t *testing.T) {
 	rc := newFakeREST(t, 202, `{"response":{"id":"img-1","status":"building"}}`)
-	if _, err := RunWithREST(context.Background(), newClient(&fakeImages{}), rc, "rebuild", []string{"img-1"}, true); err != nil {
+	if _, err := RunWithREST(context.Background(), newClient(&fakeImages{}), rc, "rebuild", []string{"img-1", "--from-source"}, true); err != nil {
 		t.Fatal(err)
 	}
 	if rc.rawQuery != "" {
@@ -312,7 +312,7 @@ func TestRebuildWithoutContextOmitsWorkspaceWhenNotGiven(t *testing.T) {
 
 func TestRebuildWithoutContextFriendlyError(t *testing.T) {
 	rc := newFakeREST(t, 409, `{"code":"IMAGE_TEMPLATE_ONLY","message":"raw"}`)
-	_, err := RunWithREST(context.Background(), newClient(&fakeImages{}), rc, "rebuild", []string{"img-1"}, true)
+	_, err := RunWithREST(context.Background(), newClient(&fakeImages{}), rc, "rebuild", []string{"img-1", "--from-source"}, true)
 	var apiErr *rest.APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != "IMAGE_TEMPLATE_ONLY" || apiErr.Message == "raw" {
 		t.Fatalf("err = %v", err)
@@ -320,7 +320,7 @@ func TestRebuildWithoutContextFriendlyError(t *testing.T) {
 }
 
 func TestRebuildWithoutContextNeedsTheRESTClient(t *testing.T) {
-	if _, err := Run(context.Background(), newClient(&fakeImages{}), "rebuild", []string{"img-1"}, true); err == nil {
+	if _, err := Run(context.Background(), newClient(&fakeImages{}), "rebuild", []string{"img-1", "--from-source"}, true); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -336,6 +336,84 @@ func TestRebuildWithContextDoesNotCallTheSourceRoute(t *testing.T) {
 	}
 	if rc.calls != 0 {
 		t.Fatal("source route called")
+	}
+}
+
+func TestRebuildWithoutFlagsUploadsTheCurrentFolder(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/Dockerfile", []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(prev) }()
+	im := &fakeImages{}
+	rc := newFakeREST(t, 202, `{}`)
+	if _, err := RunWithREST(context.Background(), newClient(im), rc, "rebuild", []string{"img-1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if im.rebuiltID != "img-1" || len(im.uploaded) == 0 {
+		t.Fatalf("id=%q uploaded=%d bytes", im.rebuiltID, len(im.uploaded))
+	}
+	if rc.calls != 0 {
+		t.Fatal("source route called")
+	}
+}
+
+func TestRebuildFromSourceWithContextIsAUsageError(t *testing.T) {
+	for _, loc := range []string{"pt", "en", "es"} {
+		ui.Locale = loc
+		for _, args := range [][]string{
+			{"img-1", "--from-source", "--context", "."},
+			{"img-1", "--context=.", "--from-source"},
+		} {
+			im := &fakeImages{}
+			rc := newFakeREST(t, 202, `{}`)
+			_, err := RunWithREST(context.Background(), newClient(im), rc, "rebuild", args, true)
+			if err == nil || err.Error() != text("from_source_with_context") || !strings.Contains(err.Error(), "--from-source") {
+				t.Fatalf("%s %v: err = %v", loc, args, err)
+			}
+			if rc.calls != 0 || im.rebuiltID != "" {
+				t.Fatalf("%s: API was called", loc)
+			}
+		}
+	}
+	ui.Locale = "en"
+}
+
+func TestFriendlySourceAndGitHubErrors(t *testing.T) {
+	defer func() { ui.Locale = "en" }()
+	msgOf := func(err error) string {
+		var apiErr *rest.APIError
+		if !errors.As(err, &apiErr) {
+			t.Fatalf("not an APIError: %v", err)
+		}
+		return apiErr.Message
+	}
+	for _, loc := range []string{"pt", "en", "es"} {
+		ui.Locale = loc
+		generic := msgOf(friendly(&rest.APIError{Status: 409, Code: "IMAGE_NOT_READY", Message: "raw"}))
+		src := msgOf(friendlyFor(&rest.APIError{Status: 409, Code: "IMAGE_NOT_READY", Message: "raw"}, true))
+		if generic != text("IMAGE_NOT_READY") || src != text("IMAGE_NOT_READY_SOURCE") || src == generic || !strings.Contains(src, "--from-source") {
+			t.Fatalf("%s: generic=%q src=%q", loc, generic, src)
+		}
+		// already localized for the command: friendly must keep it
+		if got := msgOf(friendly(friendlyFor(&rest.APIError{Status: 409, Code: "IMAGE_NOT_READY"}, true))); got != src {
+			t.Fatalf("%s: overwritten: %q", loc, got)
+		}
+		m404 := msgOf(friendly(&rest.APIError{Status: 404, Code: "FETCH_ZIP_ERROR", Message: "raw"}))
+		m502 := msgOf(friendly(&rest.APIError{Status: 502, Code: "FETCH_ZIP_ERROR", Message: "raw"}))
+		inst := msgOf(friendly(&rest.APIError{Status: 404, Code: "INSTALLATION_NOT_FOUND", Message: "raw"}))
+		if m404 != text("FETCH_ZIP_ERROR_404") || m502 != text("FETCH_ZIP_ERROR_502") || inst != text("INSTALLATION_NOT_FOUND") || m404 == m502 {
+			t.Fatalf("%s: %q %q %q", loc, m404, m502, inst)
+		}
+	}
+	ui.Locale = "en"
+	other := &rest.APIError{Status: 500, Code: "FETCH_ZIP_ERROR", Message: "raw"}
+	if friendly(other) != error(other) {
+		t.Fatal("unmapped status must pass through")
 	}
 }
 

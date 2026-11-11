@@ -306,24 +306,35 @@ func rename(ctx context.Context, client *vertracloud.Client, args []string) (any
 	return client.Images.Update(ctx, pos[0], vertracloud.ImageUpdateBody{Name: &name}, workspaceOpts(*workspace)...)
 }
 
-// rebuild has two modes. With --context it uploads that folder or zip and
-// rebuilds from it. Without it nothing is uploaded: the API rebuilds from the
-// current source (the tip of the linked GitHub branch, or the stored context
-// of the latest build). The follow-up after the request is the same.
+// rebuild has two modes. By default it uploads the --context folder or zip
+// (default: the current folder) and rebuilds from it, as it always did. With
+// --from-source nothing is uploaded: the API rebuilds from the current source
+// (the tip of the linked GitHub branch, or the stored context of the latest
+// build). The follow-up after the request is the same.
 func rebuild(ctx context.Context, client *vertracloud.Client, rc rest.Client, args []string, jsonMode bool) (any, error) {
 	f := newFlags("image rebuild")
-	contextPath := f.String("context", "", "folder or .zip with the Dockerfile (omit to rebuild from the current source)")
+	contextPath := f.String("context", ".", "folder or .zip with the Dockerfile (default: the current folder)")
+	fromSource := f.Bool("from-source", false, "rebuild from the current source without uploading anything")
 	workspace := f.String("workspace", "", "workspace id")
-	pos, err := parse(f, args, map[string]bool{"--context": true, "--workspace": true}, nil)
+	pos, err := parse(f, args, map[string]bool{"--context": true, "--workspace": true}, map[string]bool{"--from-source": true})
 	if err != nil {
 		return nil, err
+	}
+	contextGiven := false
+	f.Visit(func(fl *flag.Flag) {
+		if fl.Name == "context" {
+			contextGiven = true
+		}
+	})
+	if *fromSource && contextGiven {
+		return nil, errors.New(text("from_source_with_context"))
 	}
 	id, err := oneID(pos, "image rebuild")
 	if err != nil {
 		return nil, err
 	}
 	var image vertracloud.CustomImage
-	if *contextPath == "" {
+	if *fromSource {
 		if rc == nil {
 			return nil, errors.New("images: REST client is unavailable")
 		}
@@ -331,7 +342,7 @@ func rebuild(ctx context.Context, client *vertracloud.Client, rc rest.Client, ar
 		image, err = rebuildFromSource(ctx, rc, id, *workspace)
 		stop()
 		if err != nil {
-			return nil, err
+			return nil, friendlyFor(err, true)
 		}
 		sourceHint(jsonMode, "source_current")
 	} else {

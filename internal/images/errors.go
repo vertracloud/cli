@@ -3,6 +3,7 @@ package images
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/vertracloud/cli/internal/ui"
@@ -12,6 +13,11 @@ import (
 
 var messages = map[string]map[string]string{
 	"pt": {
+		"from_source_with_context":  "Use --from-source ou --context, não os dois: --from-source não envia nada.",
+		"IMAGE_NOT_READY_SOURCE":    "Não há contexto guardado desta imagem para refazer o build. Envie os arquivos com: vertra image rebuild <id> (sem --from-source).",
+		"FETCH_ZIP_ERROR_404":       "A branch ou o repositório não existe mais no GitHub. Vincule de novo ou envie os arquivos com: vertra image rebuild <id> (sem --from-source).",
+		"FETCH_ZIP_ERROR_502":       "O GitHub não respondeu ou limitou as requisições. Tente de novo em alguns minutos.",
+		"INSTALLATION_NOT_FOUND":    "O GitHub App não tem acesso ao repositório. Instale ou reautorize o app da Vertra Cloud no GitHub.",
 		"spin_pack":                 "Empacotando o contexto…",
 		"spin_upload":               "Enviando o contexto…",
 		"spin_rebuild_source":       "Pedindo o build a partir da fonte atual…",
@@ -51,6 +57,11 @@ var messages = map[string]map[string]string{
 		"volume_refused":            "VOLUME no /app ou abaixo, ou com caminho relativo, não é permitido",
 	},
 	"en": {
+		"from_source_with_context":  "Use --from-source or --context, not both: --from-source uploads nothing.",
+		"IMAGE_NOT_READY_SOURCE":    "This image has no stored context to rebuild from. Upload the files with: vertra image rebuild <id> (without --from-source).",
+		"FETCH_ZIP_ERROR_404":       "The branch or the repository no longer exists on GitHub. Link it again or upload the files with: vertra image rebuild <id> (without --from-source).",
+		"FETCH_ZIP_ERROR_502":       "GitHub did not respond or rate-limited the requests. Try again in a few minutes.",
+		"INSTALLATION_NOT_FOUND":    "The GitHub App has no access to the repository. Install or reauthorize the Vertra Cloud app on GitHub.",
 		"spin_pack":                 "Packing the context…",
 		"spin_upload":               "Uploading the context…",
 		"spin_rebuild_source":       "Requesting a build from the current source…",
@@ -90,6 +101,11 @@ var messages = map[string]map[string]string{
 		"volume_refused":            "VOLUME at /app or below, or with a relative path, is not allowed",
 	},
 	"es": {
+		"from_source_with_context":  "Usa --from-source o --context, no los dos: --from-source no sube nada.",
+		"IMAGE_NOT_READY_SOURCE":    "No hay contexto guardado de esta imagen para reconstruir. Sube los archivos con: vertra image rebuild <id> (sin --from-source).",
+		"FETCH_ZIP_ERROR_404":       "La rama o el repositorio ya no existe en GitHub. Vincúlalo de nuevo o sube los archivos con: vertra image rebuild <id> (sin --from-source).",
+		"FETCH_ZIP_ERROR_502":       "GitHub no respondió o limitó las solicitudes. Inténtalo de nuevo en unos minutos.",
+		"INSTALLATION_NOT_FOUND":    "La GitHub App no tiene acceso al repositorio. Instala o reautoriza la app de Vertra Cloud en GitHub.",
 		"spin_pack":                 "Empaquetando el contexto…",
 		"spin_upload":               "Subiendo el contexto…",
 		"spin_rebuild_source":       "Solicitando el build desde la fuente actual…",
@@ -137,12 +153,27 @@ func text(key string) string {
 	return messages["en"][key]
 }
 
+// localized marks an error whose message was already chosen for a specific
+// command, so friendly leaves it alone.
+type localized struct{ error }
+
+func (l localized) Unwrap() error { return l.error }
+
 // friendly swaps the API message of known image errors for a localized one,
 // keeping status, code and details, and turns the local context errors into
 // readable ones. Anything else is returned as it came.
-func friendly(err error) error {
+func friendly(err error) error { return friendlyFor(err, false) }
+
+// friendlyFor is friendly with the command known: fromSource is true for
+// `rebuild --from-source`, where IMAGE_NOT_READY means there is no stored
+// context, and the answer is a localized error that friendly keeps as is.
+func friendlyFor(err error, fromSource bool) error {
 	if err == nil {
 		return nil
+	}
+	var done localized
+	if errors.As(err, &done) {
+		return err
 	}
 	switch {
 	case errors.Is(err, ErrContextTooLarge):
@@ -151,10 +182,21 @@ func friendly(err error) error {
 		return errors.New(text("local_no_dockerfile"))
 	}
 	var apiErr *rest.APIError
-	if !errors.As(err, &apiErr) || (!strings.HasPrefix(apiErr.Code, "IMAGE_") && !strings.HasPrefix(apiErr.Code, "DOCKERFILE_")) {
+	if !errors.As(err, &apiErr) {
 		return err
 	}
-	msg := text(apiErr.Code)
+	key := apiErr.Code
+	switch {
+	case key == "IMAGE_NOT_READY" && fromSource:
+		key = "IMAGE_NOT_READY_SOURCE"
+	case key == "FETCH_ZIP_ERROR":
+		key += "_" + strconv.Itoa(apiErr.Status)
+	case key == "INSTALLATION_NOT_FOUND":
+	case strings.HasPrefix(key, "IMAGE_"), strings.HasPrefix(key, "DOCKERFILE_"):
+	default:
+		return err
+	}
+	msg := text(key)
 	if msg == "" {
 		return err
 	}
@@ -165,6 +207,9 @@ func friendly(err error) error {
 	}
 	c := *apiErr
 	c.Message = msg
+	if fromSource {
+		return localized{&c}
+	}
 	return &c
 }
 
