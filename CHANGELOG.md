@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/vertracloud/cli/compare/v0.3.7...v0.3.8) (2026-11-16)
+
+
+### Bug Fixes
+
+* **build:** build release binaries with Go 1.26.11 ([a5605d1](https://github.com/vertracloud/cli/commit/a5605d1682a3a5c7b3d3321b65a088d110118114))
+
 ## [0.3.7](https://github.com/vertracloud/cli/compare/v0.3.6...v0.3.7) (2026-11-11)
 
 
