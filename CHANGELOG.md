@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.9](https://github.com/vertracloud/cli/compare/v0.3.8...v0.3.9) (2026-11-20)
+
+
+### Features
+
+* **databases:** show the restore job of a database created from a snapshot ([8892d87](https://github.com/vertracloud/cli/commit/8892d879dddcd0e192c156d489061ccd430623e9))
+* **snapshots:** follow snapshot jobs and download through a snapshot ([f9e8eab](https://github.com/vertracloud/cli/commit/f9e8eabb4414db48c4a5f7eb91a58f584a025835))
+
+
+### Bug Fixes
+
+* **templates:** plain snapshot wording in stack updates ([5895309](https://github.com/vertracloud/cli/commit/58953098813b3d1ff2ab5103b809aeefbf65e2f1))
+
 ## [0.3.8](https://github.com/vertracloud/cli/compare/v0.3.7...v0.3.8) (2026-11-16)
 
 
