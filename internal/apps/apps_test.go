@@ -7,12 +7,15 @@ import (
 	"errors"
 	"github.com/vertracloud/cli/internal/ui"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -256,24 +259,27 @@ func TestFileWriteAndMoveReturnNodeSuccessShapes(t *testing.T) {
 }
 
 type fakeApps struct {
-	network     fakeNetwork
-	deleted     string
-	getID       string
-	getApp      vertracloud.Application
-	createCalls int
-	createArgs  vertracloud.ApplicationCreateParams
-	createdApp  vertracloud.Application
-	waitApp     vertracloud.Application
-	waitErr     error
-	waitCalls   int
-	stream      *vertracloud.ApplicationRealtimeEventStream
-	files       fakeFiles
-	releases    fakeReleases
-	analytics   fakeAnalytics
-	domains     fakeDomains
-	configBody  *vertracloud.ApplicationUpdateConfigBody
-	configErr   error
-	live        []vertracloud.ApplicationStatusShort
+	downloadCalls   int
+	downloadOpts    *vertracloud.WaitOptions
+	downloadWaitErr error
+	network         fakeNetwork
+	deleted         string
+	getID           string
+	getApp          vertracloud.Application
+	createCalls     int
+	createArgs      vertracloud.ApplicationCreateParams
+	createdApp      vertracloud.Application
+	waitApp         vertracloud.Application
+	waitErr         error
+	waitCalls       int
+	stream          *vertracloud.ApplicationRealtimeEventStream
+	files           fakeFiles
+	releases        fakeReleases
+	analytics       fakeAnalytics
+	domains         fakeDomains
+	configBody      *vertracloud.ApplicationUpdateConfigBody
+	configErr       error
+	live            []vertracloud.ApplicationStatusShort
 }
 
 type fakeAccount struct {
@@ -310,8 +316,28 @@ func (f *fakeApps) Metrics(context.Context, string, *vertracloud.ApplicationMetr
 	return nil, nil
 }
 func (f *fakeApps) Logs(context.Context, string, ...rest.RequestOpt) (string, error) { return "", nil }
-func (f *fakeApps) Download(context.Context, string, ...rest.RequestOpt) (io.ReadCloser, error) {
-	return io.NopCloser(strings.NewReader("")), nil
+func (f *fakeApps) Download(ctx context.Context, _ string, opts *vertracloud.WaitOptions, _ ...rest.RequestOpt) (io.ReadCloser, error) {
+	f.downloadCalls++
+	f.downloadOpts = opts
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.downloadWaitErr != nil {
+		return nil, f.downloadWaitErr
+	}
+	return io.NopCloser(strings.NewReader("zip")), nil
+}
+func (f *fakeApps) DownloadToFile(ctx context.Context, id, path string, opts *vertracloud.WaitOptions, reqOpts ...rest.RequestOpt) (int64, error) {
+	body, err := f.Download(ctx, id, opts, reqOpts...)
+	if err != nil {
+		return 0, err
+	}
+	defer body.Close()
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(data)), os.WriteFile(path, data, 0o600)
 }
 func (f *fakeApps) CreateFromImage(context.Context, vertracloud.ApplicationCreateFromImageParams, ...rest.RequestOpt) (vertracloud.Application, error) {
 	return vertracloud.Application{}, nil
@@ -956,5 +982,129 @@ func TestDeclinedDestructivePromptsAreCancelledNotSuccess(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestDownloadUsesTheSDKFlowAndPassesTheTimeoutFlag(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "out.zip")
+	fake := &fakeApps{}
+	client := &vertracloud.Client{Apps: fake}
+	got, err := RunWithOptions(context.Background(), client, "download", []string{"app-1", "-o", dest, "--timeout", "45m"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.downloadOpts == nil || fake.downloadOpts.Timeout != 45*time.Minute {
+		t.Fatalf("options = %#v", fake.downloadOpts)
+	}
+	if data, _ := os.ReadFile(dest); string(data) != "zip" {
+		t.Fatalf("file = %q", data)
+	}
+	if m, ok := got.(map[string]any); !ok || m["bytes"] != int64(3) {
+		t.Fatalf("result = %#v", got)
+	}
+}
+
+func TestDownloadTimeoutFlag(t *testing.T) {
+	for value, want := range map[string]time.Duration{"": 0, "0": -1, "2h": 2 * time.Hour} {
+		fake := &fakeApps{}
+		args := []string{"app-1", "-o", filepath.Join(t.TempDir(), "out.zip")}
+		if value != "" {
+			args = append(args, "--timeout", value)
+		}
+		if _, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: fake}, "download", args, true); err != nil {
+			t.Fatal(err)
+		}
+		if fake.downloadOpts.Timeout != want {
+			t.Errorf("--timeout %q gave %v, want %v", value, fake.downloadOpts.Timeout, want)
+		}
+	}
+	for _, bad := range []string{"soon", "-1m", "30"} {
+		if _, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: &fakeApps{}}, "download", []string{"app-1", "--timeout", bad}, true); err == nil {
+			t.Errorf("--timeout %q accepted", bad)
+		}
+	}
+}
+
+func TestDownloadTimedOutWaitSaysHowToWaitLonger(t *testing.T) {
+	job := vertracloud.SnapshotJob{ID: "job-1", Status: vertracloud.SnapshotJobStatusRunning}
+	fake := &fakeApps{downloadWaitErr: &vertracloud.WaitTimeoutError{Timeout: time.Minute, Job: &job}}
+	_, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: fake}, "download", []string{"app-1"}, true)
+	if err == nil || !strings.Contains(err.Error(), "--timeout") || !strings.Contains(err.Error(), "vertra snapshot jobs app-1") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDownloadFailedSnapshotJobKeepsItsReasonAsTheCode(t *testing.T) {
+	job := vertracloud.SnapshotJob{ID: "job-1", Kind: vertracloud.SnapshotJobKindSnapshot, Status: vertracloud.SnapshotJobStatusFailed, Reason: vertracloud.ErrCodeSnapshotTooLarge}
+	fake := &fakeApps{downloadWaitErr: &vertracloud.SnapshotJobError{Status: job.Status, Reason: job.Reason, Job: job}}
+	_, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: fake}, "download", []string{"app-1"}, true)
+	var apiErr *rest.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != vertracloud.ErrCodeSnapshotTooLarge {
+		t.Fatalf("err = %v, want an API error with SNAPSHOT_TOO_LARGE", err)
+	}
+}
+
+func TestDownloadStopsWhenTheContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	fake := &fakeApps{}
+	client := &vertracloud.Client{Apps: fake}
+	_, err := RunWithOptions(ctx, client, "download", []string{"app-1"}, true)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// Every call of "app download --workspace" (create the snapshot, follow the
+// job, list, download) must carry workspace_id.
+func TestDownloadSendsWorkspaceIDOnEveryCall(t *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.Path+" -> "+r.URL.Query().Get("workspace_id"))
+		mu.Unlock()
+		switch {
+		case r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"response":{"job_id":"job-1"}}`))
+		case strings.HasSuffix(r.URL.Path, "/download"):
+			_, _ = w.Write([]byte("zip-bytes"))
+		case strings.Contains(r.URL.Path, "/snapshots/jobs/"):
+			_, _ = w.Write([]byte(`{"response":{"id":"job-1","kind":"snapshot","resource_id":"app-1","status":"ready","snapshot_id":"snap-1","created_at":"2026-11-19T10:00:00Z"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"response":[{"id":"snap-1","resource_id":"app-1","resource_type":null,"size":"1","date":"2026-11-19T10:00:00Z","resource_name":null}]}`))
+		}
+	}))
+	defer srv.Close()
+	rc, err := rest.NewClient("test-key", rest.WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := vertracloud.New(rc)
+	dest := filepath.Join(t.TempDir(), "app.zip")
+	if _, err := RunWithOptions(context.Background(), client, "download", []string{"app-1", "-o", dest, "--workspace", "ws-1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(dest); string(got) != "zip-bytes" {
+		t.Fatalf("file = %q", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) < 4 {
+		t.Fatalf("calls = %v, want create, job, list and download", calls)
+	}
+	for _, c := range calls {
+		if !strings.HasSuffix(c, " -> ws-1") {
+			t.Fatalf("call %q lacks workspace_id=ws-1 (all: %v)", c, calls)
+		}
+	}
+}
+
+func TestDownloadWithWorkspaceNeedsAppID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	_, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: &fakeApps{}}, "download", []string{"--workspace", "ws-1"}, true)
+	if err == nil || !strings.Contains(err.Error(), "app id") {
+		t.Fatalf("err = %v, want an app id required", err)
 	}
 }

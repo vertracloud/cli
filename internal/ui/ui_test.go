@@ -306,6 +306,20 @@ func TestStatusWordBuildingIsLocalized(t *testing.T) {
 	}
 }
 
+func TestStatusWordRestoringIsLocalizedAndAbsentIsIgnored(t *testing.T) {
+	for locale, want := range map[string]string{"pt": "restaurando", "en": "restoring", "es": "restaurando"} {
+		got, _ := statusWord(map[string]any{"status": "down", "running": false, "restore_job_id": "job-1"}, locale)
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s: %q lacks %q", locale, got, want)
+		}
+	}
+	for _, item := range []map[string]any{{"status": "up"}, {"status": "up", "restore_job_id": nil}, {"status": "up", "restore_job_id": ""}} {
+		if got, _ := statusWord(item, "en"); strings.Contains(got, "restoring") {
+			t.Fatalf("%v: %q must not say restoring", item, got)
+		}
+	}
+}
+
 func domainRow(hostname, status string, extra map[string]any) map[string]any {
 	row := map[string]any{"id": "d-" + hostname, "hostname": hostname, "status": status, "ssl_status": "pending", "port": float64(80), "path_prefix": nil, "redirect_to": nil, "companion_of": nil, "apex": false, "redirect_status": float64(308), "created_at": "2026-10-20T12:00:00Z"}
 	for k, v := range extra {

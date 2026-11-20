@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vertracloud/cli/internal/local"
 	"github.com/vertracloud/cli/internal/ui"
@@ -52,7 +53,7 @@ func RunWithOptions(ctx context.Context, client *vertracloud.Client, command str
 	case "delete", "remove":
 		return remove(ctx, client, args)
 	case "download":
-		return download(ctx, client, args)
+		return download(ctx, client, args, jsonMode)
 	case "config":
 		return config(ctx, client, args)
 	case "releases":
@@ -285,6 +286,9 @@ func list(ctx context.Context, client *vertracloud.Client, args []string) (any, 
 				rows[i]["status"] = map[bool]string{true: "up", false: "down"}[item.Running]
 			}
 			rows[i]["installing"] = item.Installing != nil && *item.Installing
+			if item.RestoreJobID != nil {
+				rows[i]["restore_job_id"] = *item.RestoreJobID
+			}
 			rows[i]["cpu"], rows[i]["ram_used"] = item.CPU, item.RAM
 		}
 	}
@@ -605,7 +609,7 @@ func remove(ctx context.Context, client *vertracloud.Client, args []string) (any
 		return nil, errors.New("app delete accepts one app id")
 	}
 	if !*yes {
-		ok, err := confirm(os.Stdin, fmt.Sprintf("Delete app %s? [y/N] ", id))
+		ok, err := confirm(os.Stdin, fmt.Sprintf("Delete app %s? This is permanent; to keep a copy, create a snapshot first (vertra snapshot create %s). [y/N] ", id, id))
 		if err != nil {
 			return nil, err
 		}
@@ -658,12 +662,21 @@ func promptText(prompt string) (string, error) {
 	}
 }
 
-func download(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
+func download(ctx context.Context, client *vertracloud.Client, args []string, jsonMode bool) (any, error) {
 	f := fs("app download")
 	out := f.String("output", "", "destination zip")
-	pos, err := parse(f, args, map[string]bool{"--output": true, "-o": true}, nil)
+	timeout := f.String("timeout", "", "how long to wait for the zip (default 30m; 0 = no limit)")
+	workspace := f.String("workspace", "", "workspace id")
+	pos, err := parse(f, args, map[string]bool{"--output": true, "-o": true, "--timeout": true, "--workspace": true}, nil)
 	if err != nil {
 		return nil, err
+	}
+	wait, err := ParseWaitTimeout(*timeout)
+	if err != nil {
+		return nil, err
+	}
+	if *workspace != "" && (len(pos) == 0 || strings.TrimSpace(pos[0]) == "") && projectID() == "" {
+		return nil, errors.New("app download needs the app id with --workspace")
 	}
 	id, rest, err := requireID(ctx, client, pos, "app download")
 	if err != nil {
@@ -672,19 +685,56 @@ func download(ctx context.Context, client *vertracloud.Client, args []string) (a
 	if len(rest) != 0 {
 		return nil, errors.New("app download accepts one app id")
 	}
-	body, err := client.Apps.Download(ctx, id)
-	if err != nil {
-		return nil, err
-	}
 	dest := *out
 	if dest == "" {
 		dest = id + ".zip"
 	}
-	n, err := local.SaveStream(dest, body)
+	n, err := downloadZip(ctx, client, id, dest, jsonMode, wait, *workspace)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"path": dest, "bytes": n}, nil
+}
+
+// ParseWaitTimeout reads --timeout: how long to wait for something the API
+// prepares. Empty is the SDK default (30 minutes); "0" removes the limit
+// (Ctrl-C still stops).
+func ParseWaitTimeout(value string) (time.Duration, error) {
+	if value == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("invalid --timeout %q (use a duration such as 45m or 2h; 0 means no limit)", value)
+	}
+	if d == 0 {
+		return -1, nil
+	}
+	return d, nil
+}
+
+// downloadZip takes a manual snapshot of the app, follows its job and writes
+// the snapshot zip to dest as the bytes arrive (the SDK flow: constant memory,
+// a temporary file renamed at the end, nothing left behind on failure or
+// Ctrl-C). It shows a spinner while the snapshot is being taken and the
+// download runs; the file itself has no total deadline, only a stall limit.
+func downloadZip(ctx context.Context, client *vertracloud.Client, id, dest string, jsonMode bool, timeout time.Duration, workspace string) (int64, error) {
+	stop := spin(jsonMode, "download")
+	defer stop()
+	var reqOpts []rest.RequestOpt
+	if workspace != "" {
+		reqOpts = append(reqOpts, rest.WithWorkspaceID(workspace))
+	}
+	n, err := client.Apps.DownloadToFile(ctx, id, dest, &vertracloud.WaitOptions{Timeout: timeout}, reqOpts...)
+	var jobErr *vertracloud.SnapshotJobError
+	if errors.As(err, &jobErr) {
+		return 0, &rest.APIError{Code: jobErr.Reason, Message: "job " + jobErr.Job.ID + " " + string(jobErr.Status), Details: jobErr.Details}
+	}
+	var timedOut *vertracloud.WaitTimeoutError
+	if errors.As(err, &timedOut) {
+		return 0, fmt.Errorf("the snapshot for the download was not ready after %s and keeps being taken; wait longer with --timeout <duration> (0 = no limit) or follow it with: vertra snapshot jobs %s%s", timedOut.Timeout, id, workspaceFlag(workspace))
+	}
+	return n, err
 }
 
 func config(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
@@ -1475,9 +1525,10 @@ func spin(jsonMode bool, action string) func() {
 		return func() {}
 	}
 	labels := map[string]map[string]string{
-		"upload": {"pt": "Compactando e enviando a aplicação…", "en": "Packing and uploading the application…", "es": "Comprimiendo y subiendo la aplicación…"},
-		"build":  {"pt": "Construindo a aplicação…", "en": "Building the application…", "es": "Construyendo la aplicación…"},
-		"commit": {"pt": "Compactando e enviando os arquivos…", "en": "Packing and uploading files…", "es": "Comprimiendo y subiendo los archivos…"},
+		"upload":   {"pt": "Compactando e enviando a aplicação…", "en": "Packing and uploading the application…", "es": "Comprimiendo y subiendo la aplicación…"},
+		"build":    {"pt": "Construindo a aplicação…", "en": "Building the application…", "es": "Construyendo la aplicación…"},
+		"download": {"pt": "Criando o snapshot para baixar…", "en": "Taking a snapshot to download…", "es": "Creando el snapshot para descargar…"},
+		"commit":   {"pt": "Compactando e enviando os arquivos…", "en": "Packing and uploading files…", "es": "Comprimiendo y subiendo los archivos…"},
 	}
 	return ui.Spin(labels[action][ui.Locale])
 }
@@ -1616,4 +1667,12 @@ func readDotEnv(path string) ([]vertracloud.ApplicationEnvironmentInput, error) 
 		pairs = append(pairs, line)
 	}
 	return envPairs(pairs)
+}
+
+// workspaceFlag is the " --workspace <id>" suffix of a hint command, or "".
+func workspaceFlag(workspace string) string {
+	if workspace == "" {
+		return ""
+	}
+	return " --workspace " + workspace
 }

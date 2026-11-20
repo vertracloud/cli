@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
-	"github.com/vertracloud/cli/internal/local"
+	"github.com/vertracloud/cli/internal/apps"
 	"github.com/vertracloud/cli/internal/ui"
+	"github.com/vertracloud/sdk-api-go/rest"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
 )
 
@@ -48,7 +51,7 @@ func parse(args []string) ([]string, options, error) {
 		}
 		if strings.HasPrefix(a, "--") {
 			name, value, found := strings.Cut(strings.TrimPrefix(a, "--"), "=")
-			if !found && (name == "db" || name == "download") {
+			if !found && (name == "db" || name == "download" || name == "wait" || name == "no-wait") {
 				opts.values[name] = "true"
 				continue
 			}
@@ -61,12 +64,12 @@ func parse(args []string) ([]string, options, error) {
 				}
 			}
 			switch name {
-			case "db", "download":
+			case "db", "download", "wait", "no-wait":
 				if found || value == "true" {
 					opts.values[name] = value
 					continue
 				}
-			case "description", "name", "color", "workspace", "permissions", "output", "to", "status", "snapshot":
+			case "description", "name", "color", "workspace", "permissions", "output", "to", "status", "snapshot", "kind", "timeout":
 				if value == "true" {
 					return nil, options{}, fmt.Errorf("--%s requires a value", name)
 				}
@@ -500,73 +503,271 @@ func snapshot(ctx context.Context, c *vertracloud.Client, args []string) (any, e
 	if _, ok := opts.values["db"]; ok {
 		scope = vertracloud.SnapshotScopeDatabases
 	}
+	workspace := opts.values["workspace"]
+	reqOpts := workspaceOpts(workspace)
 	switch pos[0] {
 	case "list":
 		if len(pos) > 2 {
-			return nil, errors.New("usage: snapshot list [resourceId] [--db]")
+			return nil, errors.New("usage: snapshot list [resourceId] [--db] [--workspace <id>]")
 		}
 		if len(pos) == 1 {
-			return c.Snapshots.ListAll(ctx, scope)
+			return c.Snapshots.ListAll(ctx, scope, reqOpts...)
 		}
-		return c.Snapshots.List(ctx, pos[1], scope)
+		return c.Snapshots.List(ctx, pos[1], scope, reqOpts...)
 	case "create":
 		if len(pos) > 2 {
-			return nil, errors.New("usage: snapshot create [resourceId] [--db]")
+			return nil, errors.New("usage: snapshot create [resourceId] [--db] [--workspace <id>] [--timeout <duration>]")
 		}
 		id := ""
 		if len(pos) == 2 {
 			id = pos[1]
+		} else if workspace != "" {
+			return nil, errors.New("snapshot create needs the resource id with --workspace")
 		} else {
 			id, err = resolveSnapshotResource(ctx, c, scope)
 			if err != nil {
 				return nil, err
 			}
 		}
-		snap, err := c.Snapshots.Create(ctx, id, scope)
+		timeout, err := waitTimeout(opts)
+		if err != nil {
+			return nil, err
+		}
+		snap, err := createSnapshot(ctx, c, id, scope, workspace, timeout)
 		if err != nil {
 			return nil, err
 		}
 		if _, download := opts.values["download"]; !download {
 			return snap, nil
 		}
-		data, err := c.Snapshots.Download(ctx, id, snap.ID, scope)
-		if err != nil {
-			return nil, err
-		}
 		file := snap.ID + ".zip"
-		if _, err := local.SaveStream(file, data); err != nil {
+		if _, err := c.Snapshots.DownloadToFile(ctx, id, snap.ID, scope, file, reqOpts...); err != nil {
 			return nil, err
 		}
 		return mapWith(snap, "downloaded_file", file)
 	case "download":
-		if err := exact(pos, 3, "snapshot download <resourceId> <snapshotId>"); err != nil {
+		if err := exact(pos, 3, "snapshot download <resourceId> <snapshotId> [--db] [--workspace <id>]"); err != nil {
 			return nil, err
 		}
 		file := opts.values["output"]
 		if file == "" {
 			file = pos[2] + ".zip"
 		}
-		data, err := c.Snapshots.Download(ctx, pos[1], pos[2], scope)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := local.SaveStream(file, data); err != nil {
+		if _, err := c.Snapshots.DownloadToFile(ctx, pos[1], pos[2], scope, file, reqOpts...); err != nil {
 			return nil, err
 		}
 		return map[string]string{"file": file}, nil
+	case "job":
+		if err := exact(pos, 3, "snapshot job <resourceId> <jobId> [--db] [--workspace <id>] [--wait] [--timeout <duration>]"); err != nil {
+			return nil, err
+		}
+		if opts.values["wait"] != "true" {
+			return c.SnapshotJobs.Get(ctx, pos[1], pos[2], scope, reqOpts...)
+		}
+		timeout, err := waitTimeout(opts)
+		if err != nil {
+			return nil, err
+		}
+		job, err := waitJob(ctx, c, pos[1], pos[2], scope, workspace, tr("Acompanhando o job…", "Following the job…", "Siguiendo el job…"), timeout)
+		if err != nil {
+			return nil, err
+		}
+		return mapWith(job, "job_id", job.ID)
+	case "jobs":
+		if err := exact(pos, 2, "snapshot jobs <resourceId> [--db] [--workspace <id>] [--kind snapshot|restore]"); err != nil {
+			return nil, err
+		}
+		params := &vertracloud.SnapshotJobsParams{}
+		switch kind := opts.values["kind"]; kind {
+		case "":
+		case string(vertracloud.SnapshotJobKindSnapshot), string(vertracloud.SnapshotJobKindRestore):
+			params.Kind = vertracloud.SnapshotJobKind(kind)
+		default:
+			return nil, fmt.Errorf("invalid --kind %q (use snapshot or restore)", kind)
+		}
+		return c.SnapshotJobs.List(ctx, pos[1], scope, params, reqOpts...)
 	case "restore":
-		if err := exact(pos, 3, "snapshot restore <resourceId> <snapshotId> --yes"); err != nil {
+		if err := exact(pos, 3, "snapshot restore <resourceId> <snapshotId> [--workspace <id>] [--to <id>] [--no-wait] [--timeout <duration>] --yes"); err != nil {
 			return nil, err
 		}
-		if err := requireYes(opts); err != nil {
+		if !opts.yes {
+			if !ui.IsInteractive() {
+				return nil, errors.New("destructive command requires --yes")
+			}
+			ok, err := ui.Confirm("Restore snapshot " + pos[2] + "? The current data will be replaced; to keep a copy, create a snapshot first (vertra snapshot create " + pos[1] + ").")
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return nil, apps.ErrCancelled
+			}
+		}
+		restored, err := c.Snapshots.RestoreWith(ctx, pos[1], pos[2], scope, vertracloud.SnapshotRestoreParams{TargetResourceID: opts.values["to"]}, reqOpts...)
+		if err != nil {
 			return nil, err
 		}
-		if target := opts.values["to"]; target != "" {
-			return c.Snapshots.RestoreTo(ctx, pos[1], pos[2], scope, target)
+		result, err := mapWith(restored, "restore", "accepted")
+		if err != nil {
+			return nil, err
 		}
-		return c.Snapshots.Restore(ctx, pos[1], pos[2], scope)
+		target := pos[1]
+		if to := opts.values["to"]; to != "" {
+			target = to
+		}
+		if restored.Warning != nil && *restored.Warning == vertracloud.SnapshotImageWarningImageVersionNotFound {
+			fmt.Fprintln(os.Stderr, tr("Aviso: a versão da imagem do snapshot não existe mais; só os dados serão restaurados.", "Warning: the snapshot's image version no longer exists; only the data will be restored.", "Aviso: la versión de la imagen del snapshot ya no existe; solo se restaurarán los datos."))
+		}
+		if restored.JobID == "" {
+			return result, nil
+		}
+		if opts.values["no-wait"] == "true" {
+			fmt.Fprintln(os.Stderr, fmt.Sprintf(tr("Restauração iniciada (job %s): os dados ainda não voltaram. Acompanhe com: vertra snapshot job %s %s%s --wait", "Restore started (job %s): the data is not back yet. Follow it with: vertra snapshot job %s %s%s --wait", "Restauración iniciada (job %s): los datos aún no volvieron. Síguela con: vertra snapshot job %s %s%s --wait"), restored.JobID, target, restored.JobID, scopeFlag(scope, workspace)))
+			return result, nil
+		}
+		timeout, err := waitTimeout(opts)
+		if err != nil {
+			return nil, err
+		}
+		job, err := waitJob(ctx, c, target, restored.JobID, scope, workspace, tr("Restaurando o snapshot…", "Restoring the snapshot…", "Restaurando el snapshot…"), timeout)
+		if err != nil {
+			return nil, err
+		}
+		result["status"] = string(job.Status)
+		return result, nil
 	default:
 		return nil, fmt.Errorf("unknown snapshot command %q", pos[0])
+	}
+}
+
+func tr(pt, en, es string) string {
+	switch ui.Locale {
+	case "pt":
+		return pt
+	case "es":
+		return es
+	}
+	return en
+}
+
+func scopeFlag(scope vertracloud.SnapshotScope, workspace string) string {
+	flags := ""
+	if scope == vertracloud.SnapshotScopeDatabases {
+		flags += " --db"
+	}
+	if workspace != "" {
+		flags += " --workspace " + workspace
+	}
+	return flags
+}
+
+func workspaceOpts(workspace string) []rest.RequestOpt {
+	if workspace == "" {
+		return nil
+	}
+	return []rest.RequestOpt{rest.WithWorkspaceID(workspace)}
+}
+
+// waitTimeout reads --timeout (see apps.ParseWaitTimeout).
+func waitTimeout(opts options) (time.Duration, error) {
+	return apps.ParseWaitTimeout(opts.values["timeout"])
+}
+
+// waitOptions is how the CLI follows a job: the poll interval, the --timeout and
+// a progress line that replaces the spinner label.
+func waitOptions(timeout time.Duration, label string, update func(string)) *vertracloud.WaitOptions {
+	return &vertracloud.WaitOptions{
+		Interval: jobPollInterval,
+		Timeout:  timeout,
+		OnProgress: func(job vertracloud.SnapshotJob) {
+			update(label + " " + ui.Dim(progressText(job)))
+		},
+	}
+}
+
+// waitJob follows a snapshot job to its end behind a spinner that shows its
+// progress (a no-op off a terminal). A job that ends failed or skipped comes
+// back as an error carrying its public reason as the code.
+func waitJob(ctx context.Context, c *vertracloud.Client, resourceID, jobID string, scope vertracloud.SnapshotScope, workspace, label string, timeout time.Duration) (vertracloud.SnapshotJob, error) {
+	update, stop := ui.SpinUpdatable(label)
+	defer stop()
+	job, err := c.SnapshotJobs.Wait(ctx, resourceID, jobID, scope, waitOptions(timeout, label, update), workspaceOpts(workspace)...)
+	return job, jobWaitError(err, resourceID, jobID, scope, workspace)
+}
+
+// createSnapshot takes a snapshot and, when the API answers 202 because it is
+// still being taken, follows the job and returns the snapshot it made.
+func createSnapshot(ctx context.Context, c *vertracloud.Client, resourceID string, scope vertracloud.SnapshotScope, workspace string, timeout time.Duration) (vertracloud.ResourceSnapshot, error) {
+	label := tr("Criando o snapshot…", "Taking the snapshot…", "Creando el snapshot…")
+	update, stop := ui.SpinUpdatable(label)
+	defer stop()
+	snap, err := c.Snapshots.CreateAndWait(ctx, resourceID, scope, waitOptions(timeout, label, update), workspaceOpts(workspace)...)
+	var timedOut *vertracloud.WaitTimeoutError
+	jobID := ""
+	if errors.As(err, &timedOut) && timedOut.Job != nil {
+		jobID = timedOut.Job.ID
+	}
+	return snap, jobWaitError(err, resourceID, jobID, scope, workspace)
+}
+
+var jobPollInterval = 2 * time.Second
+
+// jobWaitError gives the errors of a job wait the text the CLI shows: a failed
+// or skipped job keeps its public reason (and details) as an API error code, and
+// a wait that ran out says the job keeps running and how to follow it.
+func jobWaitError(err error, resourceID, jobID string, scope vertracloud.SnapshotScope, workspace string) error {
+	var jobErr *vertracloud.SnapshotJobError
+	if errors.As(err, &jobErr) {
+		return &rest.APIError{Code: jobErr.Reason, Message: "job " + jobErr.Job.ID + " " + string(jobErr.Status), Details: jobErr.Details}
+	}
+	var timedOut *vertracloud.WaitTimeoutError
+	if errors.As(err, &timedOut) && jobID != "" {
+		return fmt.Errorf(tr("o job %s ainda não terminou depois de %s e continua rodando; acompanhe com: vertra snapshot job %s %s%s --wait", "job %s did not finish within %s and keeps running; follow it with: vertra snapshot job %s %s%s --wait", "el job %s no terminó en %s y sigue corriendo; síguelo con: vertra snapshot job %s %s%s --wait"), jobID, timedOut.Timeout, resourceID, jobID, scopeFlag(scope, workspace))
+	}
+	return err
+}
+
+// progressText is the progress line of a running job: phase, percent, bytes
+// and the time left, whichever the API sent.
+func progressText(job vertracloud.SnapshotJob) string {
+	p := job.Progress
+	if p == nil {
+		if job.Status == vertracloud.SnapshotJobStatusQueued {
+			return tr("na fila", "queued", "en cola")
+		}
+		return ""
+	}
+	var parts []string
+	switch p.Phase {
+	case vertracloud.SnapshotJobPhasePreparing:
+		parts = append(parts, tr("preparando", "preparing", "preparando"))
+	case vertracloud.SnapshotJobPhaseCopying:
+		parts = append(parts, tr("copiando", "copying", "copiando"))
+	case vertracloud.SnapshotJobPhaseFinishing:
+		parts = append(parts, tr("finalizando", "finishing", "finalizando"))
+	}
+	if p.Percent != nil {
+		parts = append(parts, fmt.Sprintf("%.0f%%", *p.Percent))
+	}
+	switch {
+	case p.TotalBytes > 0:
+		parts = append(parts, ui.FormatBytes(p.DoneBytes)+" / "+ui.FormatBytes(p.TotalBytes))
+	case p.DoneBytes > 0:
+		parts = append(parts, ui.FormatBytes(p.DoneBytes))
+	}
+	if p.ETASeconds != nil && *p.ETASeconds > 0 {
+		parts = append(parts, fmt.Sprintf(tr("faltam ~%s", "~%s left", "faltan ~%s"), etaText(*p.ETASeconds)))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func etaText(seconds float64) string {
+	switch s := int(seconds + 0.5); {
+	case s < 60:
+		return fmt.Sprintf("%d s", s)
+	case s < 3600:
+		return fmt.Sprintf("%d min", (s+30)/60)
+	default:
+		return fmt.Sprintf("%d h %d min", s/3600, (s%3600+30)/60)
 	}
 }
 

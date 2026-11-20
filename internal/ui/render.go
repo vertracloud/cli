@@ -240,8 +240,8 @@ var listColumns = map[string][]string{
 // hidden fields are internal bookkeeping that only add noise for humans.
 var hidden = map[string]bool{
 	"owner_id": true, "owner_plan": true,
-	"deleted_at": true, "resource_organization": true, "position": true, "installing": true, "running": true,
-	"favorite": true, "user_id": true, "workspace_id": true, "cluster": true, "author_id": true, "is_owner": true, "folder_color": true, "ram_used": true, "ram_limit": true,
+	"deleted_at": true, "resource_organization": true, "position": true, "installing": true, "restore_job_id": true, "running": true,
+	"favorite": true, "user_id": true, "workspace_id": true, "cluster": true, "is_owner": true, "folder_color": true, "ram_used": true, "ram_limit": true,
 }
 
 func table(w io.Writer, values []any, cmd, kind, locale string) {
@@ -698,6 +698,9 @@ func statusWord(item map[string]any, locale string) (string, func(string) string
 	if shieldActive(item) {
 		return "⛨ shield", Red
 	}
+	if id, _ := item["restore_job_id"].(string); id != "" {
+		return "● " + text(locale, "restoring"), Yellow
+	}
 	if item["installing"] == true {
 		return "● " + text(locale, "installing"), Yellow
 	}
@@ -981,7 +984,7 @@ var translations = map[string]map[string]string{
 		"domains": "Domínios", "hostname": "Domínio", "ssl_status": "SSL", "path_prefix": "Prefixo", "redirect_to": "Redireciona para", "active": "ativo", "applications": "Aplicações", "databases": "Bancos de dados",
 		"email": "E-mail", "locale": "Idioma", "current": "Atual", "available": "Disponíveis", "ok": "Concluído.", "file": "Arquivo",
 		"folder": "Pasta", "not_configured": "Não configurado", "website": "Site", "bot": "Bot",
-		"yes": "Sim", "no": "Não", "online": "online", "offline": "offline", "installing": "instalando", "building": "construindo", "uptime": "Tempo ativo",
+		"yes": "Sim", "no": "Não", "online": "online", "offline": "offline", "installing": "instalando", "restoring": "restaurando", "building": "construindo", "uptime": "Tempo ativo",
 		"network": "Rede", "plan": "Plano", "members_count": "Membros", "resource_name": "Recurso", "resource_type": "Tipo",
 		"resource_id": "ID do recurso", "size": "Tamanho", "date": "Data", "color": "Cor", "resources": "Recursos", "key": "Chave",
 		"value": "Valor", "note": "Nota", "last_modified": "Modificado em", "path": "Caminho", "host": "Host", "port": "Porta",
@@ -1031,7 +1034,7 @@ var translations = map[string]map[string]string{
 		"domains": "Dominios", "hostname": "Dominio", "ssl_status": "SSL", "path_prefix": "Prefijo", "redirect_to": "Redirige a", "active": "activo", "applications": "Aplicaciones", "databases": "Bases de datos",
 		"email": "Correo", "locale": "Idioma", "current": "Actual", "available": "Disponibles", "ok": "Completado.", "file": "Archivo",
 		"folder": "Carpeta", "not_configured": "No configurado", "website": "Sitio web", "bot": "Bot",
-		"yes": "Sí", "no": "No", "online": "activa", "offline": "apagada", "installing": "instalando", "building": "construyendo", "uptime": "Tiempo activo",
+		"yes": "Sí", "no": "No", "online": "activa", "offline": "apagada", "installing": "instalando", "restoring": "restaurando", "building": "construyendo", "uptime": "Tiempo activo",
 		"network": "Red", "plan": "Plan", "members_count": "Miembros", "resource_name": "Recurso", "resource_type": "Tipo",
 		"resource_id": "ID del recurso", "size": "Tamaño", "date": "Fecha", "color": "Color", "resources": "Recursos", "key": "Clave",
 		"value": "Valor", "note": "Nota", "last_modified": "Modificado", "path": "Ruta", "host": "Host", "port": "Puerto",
@@ -1081,7 +1084,7 @@ var translations = map[string]map[string]string{
 		"domains": "Domains", "hostname": "Domain", "ssl_status": "SSL", "path_prefix": "Prefix", "redirect_to": "Redirects to", "active": "active", "applications": "Applications", "databases": "Databases",
 		"email": "Email", "locale": "Language", "current": "Current", "available": "Available", "ok": "Done.", "file": "File",
 		"folder": "Folder", "not_configured": "Not configured", "website": "Website", "bot": "Bot",
-		"yes": "Yes", "no": "No", "online": "online", "offline": "offline", "installing": "installing", "building": "building", "uptime": "Uptime",
+		"yes": "Yes", "no": "No", "online": "online", "offline": "offline", "installing": "installing", "restoring": "restoring", "building": "building", "uptime": "Uptime",
 		"network": "Network", "plan": "Plan", "members_count": "Members", "resource_name": "Resource", "resource_type": "Type",
 		"resource_id": "Resource ID", "size": "Size", "date": "Date", "color": "Color", "resources": "Resources", "key": "Key",
 		"value": "Value", "note": "Note", "last_modified": "Modified", "path": "Path", "host": "Host", "port": "Port",

@@ -76,9 +76,18 @@ func Failure(w io.Writer, message, hint string) {
 // Spin shows a spinner on stderr while a slow call runs. It is a no-op when
 // stderr is not a terminal. The returned func stops it and clears the line.
 func Spin(label string) func() {
+	_, stop := SpinUpdatable(label)
+	return stop
+}
+
+// SpinUpdatable is Spin with a label that can change while it runs (a progress
+// line): update replaces it. Both funcs are no-ops off a terminal.
+func SpinUpdatable(label string) (update func(string), stop func()) {
 	if !isTTY(os.Stderr) {
-		return func() {}
+		return func(string) {}, func() {}
 	}
+	var mu sync.Mutex
+	current := label
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -88,7 +97,10 @@ func Spin(label string) func() {
 		ticker := time.NewTicker(80 * time.Millisecond)
 		defer ticker.Stop()
 		for i := 0; ; i++ {
-			fmt.Fprintf(os.Stderr, "\r\x1b[2K%s %s", Cyan(frames[i%len(frames)]), label)
+			mu.Lock()
+			text := current
+			mu.Unlock()
+			fmt.Fprintf(os.Stderr, "\r\x1b[2K%s %s", Cyan(frames[i%len(frames)]), text)
 			select {
 			case <-done:
 				fmt.Fprint(os.Stderr, "\r\x1b[2K")
@@ -98,7 +110,30 @@ func Spin(label string) func() {
 		}
 	}()
 	var once sync.Once
-	return func() { once.Do(func() { close(done); wg.Wait() }) }
+	return func(next string) {
+			mu.Lock()
+			current = next
+			mu.Unlock()
+		}, func() {
+			once.Do(func() { close(done); wg.Wait() })
+		}
+}
+
+// FormatBytes writes a size with a binary unit (1536 -> "1.5 KiB").
+func FormatBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	value, suffix := float64(n), "B"
+	for _, s := range []string{"KiB", "MiB", "GiB", "TiB"} {
+		value /= unit
+		suffix = s
+		if value < unit {
+			break
+		}
+	}
+	return fmt.Sprintf("%.1f %s", value, suffix)
 }
 
 func PickID(label string, items []Choice) (string, error) {
