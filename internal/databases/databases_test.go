@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -221,5 +222,35 @@ func TestPresentVersionsKeepsUnknownKeys(t *testing.T) {
 	rows := presentVersions(vertracloud.DatabaseVersions{"x": {Recommended: "1"}})
 	if rows[0]["type"] != "x" {
 		t.Fatalf("rows = %#v", rows)
+	}
+}
+
+type destructiveFake struct {
+	vertracloud.DatabasesService
+	deleted, reset string
+}
+
+func (f *destructiveFake) Delete(_ context.Context, id string, _ ...rest.RequestOpt) (string, error) {
+	f.deleted = id
+	return id, nil
+}
+
+func (f *destructiveFake) Reset(_ context.Context, id string, _ ...rest.RequestOpt) (vertracloud.DatabaseOperationResponse, error) {
+	f.reset = id
+	return vertracloud.DatabaseOperationResponse{Status: "success"}, nil
+}
+
+func TestDeleteAndResetWithYesRunRightAwayAndReturnTheID(t *testing.T) {
+	fake := &destructiveFake{}
+	client := &vertracloud.Client{Databases: fake}
+	for _, command := range []string{"delete", "reset"} {
+		got, err := Run(context.Background(), client, command, []string{"db-1", "--yes"})
+		want := map[string]string{"id": "db-1"}
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: got %#v, err %v", command, got, err)
+		}
+	}
+	if fake.deleted != "db-1" || fake.reset != "db-1" {
+		t.Errorf("deleted=%q reset=%q", fake.deleted, fake.reset)
 	}
 }

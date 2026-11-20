@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vertracloud/cli/internal/apps"
 	"github.com/vertracloud/cli/internal/ui"
 	"github.com/vertracloud/sdk-api-go/rest"
 	"github.com/vertracloud/sdk-api-go/vertracloud"
@@ -315,7 +316,26 @@ func create(ctx context.Context, client *vertracloud.Client, args []string) (any
 	// Empty is omitted from the body (omitempty), so the recommended line or the
 	// snapshot's line applies.
 	params.Version = strings.TrimSpace(*version)
-	return client.Databases.Create(ctx, params)
+	db, err := client.Databases.Create(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if db.RestoreJobID != "" {
+		_, _ = fmt.Fprintf(os.Stderr, restoreJobNote(), db.RestoreJobID, db.ID, db.RestoreJobID)
+	}
+	return db, nil
+}
+
+// restoreJobNote tells where the data of a database created from a snapshot is
+// (it comes back in the background) and what happens if that fails.
+func restoreJobNote() string {
+	switch ui.Locale {
+	case "pt":
+		return "O banco foi criado e os dados voltam em segundo plano (restore_job_id %s). Se a restauração falhar, o banco continua criado, vazio. Acompanhe com: vertra snapshot job %s %s --db --wait\n"
+	case "es":
+		return "La base de datos se creó y los datos vuelven en segundo plano (restore_job_id %s). Si la restauración falla, la base queda creada, vacía. Síguela con: vertra snapshot job %s %s --db --wait\n"
+	}
+	return "The database was created and its data comes back in the background (restore_job_id %s). If the restore fails, the database stays created, empty. Follow it with: vertra snapshot job %s %s --db --wait\n"
 }
 
 // versions lists, per engine, the recommended and available version lines.
@@ -423,8 +443,8 @@ func remove(ctx context.Context, client *vertracloud.Client, args []string) (any
 	if err != nil {
 		return nil, err
 	}
-	if !*yes {
-		return nil, errors.New("db delete requires --yes")
+	if err := confirmDestructive(*yes, "db delete", "Delete database "+id+"? This is permanent; to keep a copy, create a snapshot first (vertra snapshot create "+id+" --db)."); err != nil {
+		return nil, err
 	}
 	if _, err := client.Databases.Delete(ctx, id); err != nil {
 		return nil, err
@@ -469,13 +489,31 @@ func reset(ctx context.Context, client *vertracloud.Client, args []string) (any,
 	if err != nil {
 		return nil, err
 	}
-	if !*yes {
-		return nil, errors.New("db reset requires --yes")
+	if err := confirmDestructive(*yes, "db reset", "Reset database "+id+"? All its data will be erased permanently; to keep a copy, create a snapshot first (vertra snapshot create "+id+" --db)."); err != nil {
+		return nil, err
 	}
 	if _, err := client.Databases.Reset(ctx, id); err != nil {
 		return nil, err
 	}
 	return map[string]string{"id": id}, nil
+}
+
+// confirmDestructive keeps --yes mandatory outside a terminal and asks inside one.
+func confirmDestructive(yes bool, command, question string) error {
+	if yes {
+		return nil
+	}
+	if !ui.IsInteractive() {
+		return errors.New(command + " requires --yes")
+	}
+	ok, err := ui.Confirm(question)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return apps.ErrCancelled
+	}
+	return nil
 }
 
 func status(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
