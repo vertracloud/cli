@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.10](https://github.com/vertracloud/cli/compare/v0.3.9...v0.3.10) (2026-11-24)
+
+
+### Features
+
+* auto restart, one-time database passwords, translated console notes and metric events ([2185925](https://github.com/vertracloud/cli/commit/2185925459cade15d11d7e216c9344b9344e9e6a))
+
 ## [0.3.9](https://github.com/vertracloud/cli/compare/v0.3.8...v0.3.9) (2026-11-20)
 
 
