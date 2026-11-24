@@ -558,7 +558,11 @@ func Follow(ctx context.Context, client *vertracloud.Client, args []string, out 
 	}
 	defer stream.Close()
 	for stream.Next(ctx) {
-		if _, err := fmt.Fprintln(out, ui.LogText(stream.Event().Data)); err != nil {
+		line, ok := followLine(stream.Event())
+		if !ok {
+			continue
+		}
+		if _, err := fmt.Fprintln(out, line); err != nil {
 			return err
 		}
 	}
@@ -567,6 +571,33 @@ func Follow(ctx context.Context, client *vertracloud.Client, args []string, out 
 	} else {
 		return err
 	}
+}
+
+func followLine(ev vertracloud.ApplicationRealtimeEvent) (string, bool) {
+	switch ev.Event {
+	case "", vertracloud.ApplicationRealtimeEventTypeLogs:
+		return ui.LogText(ev.Data), true
+	case vertracloud.ApplicationRealtimeEventTypeSystem:
+		return systemLine(ev.Data), true
+	case vertracloud.ApplicationRealtimeEventTypeNextLogs:
+		label := ui.Dim("[" + nextVersionLabel() + "]")
+		lines := strings.Split(strings.TrimRight(ui.LogText(ev.Data), "\n"), "\n")
+		for i, line := range lines {
+			lines[i] = label + " " + line
+		}
+		return strings.Join(lines, "\n"), true
+	}
+	return "", false
+}
+
+func nextVersionLabel() string {
+	switch ui.Locale {
+	case "pt":
+		return "Nova versão"
+	case "es":
+		return "Nueva versión"
+	}
+	return "New version"
 }
 
 func restart(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
@@ -737,6 +768,28 @@ func downloadZip(ctx context.Context, client *vertracloud.Client, id, dest strin
 	return n, err
 }
 
+func AutoRestartValue(value string) (*bool, error) {
+	switch value {
+	case "on":
+		return ptr(true), nil
+	case "off":
+		return ptr(false), nil
+	}
+	return nil, errors.New("--auto-restart must be on or off")
+}
+
+func fileDeleteNote() string {
+	switch ui.Locale {
+	case "pt":
+		return "O app ainda mantém o arquivo aberto: o espaço em disco volta quando o app reiniciar."
+	case "es":
+		return "La app todavía tiene el archivo abierto: el espacio en disco vuelve cuando la app se reinicie."
+	}
+	return "The app still has the file open: the disk space comes back when the app restarts."
+}
+
+func ptr[T any](v T) *T { return &v }
+
 func config(ctx context.Context, client *vertracloud.Client, args []string) (any, error) {
 	f := fs("app config")
 	name := f.String("name", "", "app name")
@@ -748,7 +801,8 @@ func config(ctx context.Context, client *vertracloud.Client, args []string) (any
 	autoRollback := f.String("auto-rollback", "", "on or off")
 	healthPath := f.String("health-path", "", "health check path")
 	clearHealth := f.Bool("clear-health-path", false, "remove the health check path")
-	pos, err := parse(f, args, map[string]bool{"--name": true, "--ram": true, "--main": true, "--version": true, "--start": true, "--zero-downtime": true, "--auto-rollback": true, "--health-path": true}, map[string]bool{"--clear-health-path": true})
+	autoRestart := f.String("auto-restart", "", "on or off")
+	pos, err := parse(f, args, map[string]bool{"--name": true, "--ram": true, "--main": true, "--version": true, "--start": true, "--zero-downtime": true, "--auto-rollback": true, "--health-path": true, "--auto-restart": true}, map[string]bool{"--clear-health-path": true})
 	if err != nil {
 		return nil, err
 	}
@@ -786,7 +840,12 @@ func config(ctx context.Context, client *vertracloud.Client, args []string) (any
 		body.StartCommand = vertracloud.NullableValue(*start)
 	}
 	body.Deploy = deploy
-	if body.Name == nil && body.RAM == nil && body.MainFile == nil && body.Version == nil && body.StartCommand == nil && body.Deploy == nil {
+	if set["auto-restart"] {
+		if body.AutoRestart, err = AutoRestartValue(*autoRestart); err != nil {
+			return nil, err
+		}
+	}
+	if body.Name == nil && body.RAM == nil && body.MainFile == nil && body.Version == nil && body.StartCommand == nil && body.Deploy == nil && body.AutoRestart == nil {
 		return nil, errors.New("app config requires at least one option")
 	}
 	msg, err := client.Apps.UpdateConfig(ctx, id, body)
@@ -805,16 +864,34 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	start := f.String("start", "", "start command")
 	workspace := f.String("workspace", "", "workspace id")
 	noWait := f.Bool("no-wait", false, "return right after the upload, without waiting for the build")
+	autoRestartFlag := f.String("auto-restart", "", "on or off")
 	language := ""
-	pos, err := parse(f, args, map[string]bool{"--file": true, "--name": true, "--memory": true, "--main": true, "--version": true, "--description": true, "--subdomain": true, "--start": true, "--workspace": true}, map[string]bool{"--no-wait": true})
+	pos, err := parse(f, args, map[string]bool{"--file": true, "--name": true, "--memory": true, "--main": true, "--version": true, "--description": true, "--subdomain": true, "--start": true, "--workspace": true, "--auto-restart": true}, map[string]bool{"--no-wait": true})
 	if err != nil {
 		return nil, err
 	}
 	if len(pos) != 0 {
 		return nil, fmt.Errorf("unexpected arguments: %s", strings.Join(pos, " "))
 	}
+	set := map[string]bool{}
+	f.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+	var autoRestart *bool
+	if set["auto-restart"] {
+		if autoRestart, err = AutoRestartValue(*autoRestartFlag); err != nil {
+			return nil, err
+		}
+	}
 	if cwd, e := os.Getwd(); e == nil {
 		if cfg, e := local.ReadProject(cwd); e == nil && cfg != nil {
+			if !set["auto-restart"] {
+				value, present, valid := local.AutoRestart(cfg)
+				if !valid {
+					return nil, errors.New("AUTORESTART in vertracloud.config must be true or false")
+				}
+				if present {
+					autoRestart = ptr(value)
+				}
+			}
 			if *name == "" {
 				*name = cfg["NAME"]
 			}
@@ -887,7 +964,7 @@ func upload(ctx context.Context, client *vertracloud.Client, args []string, json
 	if *description != "" {
 		descriptionValue = vertracloud.NullableValue(*description)
 	}
-	app, err := client.Apps.Create(ctx, vertracloud.ApplicationCreateParams{File: r, FileName: filename, Name: *name, Memory: *memory, Main: *main, Version: vertracloud.ApplicationVersion(*version), Language: vertracloud.ApplicationLanguage(language), Description: descriptionValue, Subdomain: *subdomain, Start: *start, WorkspaceID: *workspace})
+	app, err := client.Apps.Create(ctx, vertracloud.ApplicationCreateParams{File: r, FileName: filename, Name: *name, Memory: *memory, Main: *main, Version: vertracloud.ApplicationVersion(*version), Language: vertracloud.ApplicationLanguage(language), Description: descriptionValue, Subdomain: *subdomain, Start: *start, WorkspaceID: *workspace, AutoRestart: autoRestart})
 	stop()
 	if err != nil {
 		return nil, err
@@ -1177,10 +1254,19 @@ func file(ctx context.Context, client *vertracloud.Client, args []string, jsonMo
 				return nil, ErrCancelled
 			}
 		}
-		if err := client.Apps.Files().Delete(ctx, id, vertracloud.ApplicationFileDeleteBody{Path: path}); err != nil {
+		deleted, err := client.Apps.Files().Delete(ctx, id, vertracloud.ApplicationFileDeleteBody{Path: path})
+		if err != nil {
 			return nil, err
 		}
-		return map[string]string{"path": path}, nil
+		released := string(deleted.SpaceReleased)
+		if released == "" {
+			released = string(vertracloud.ApplicationFileSpaceReleasedNow)
+		}
+		result := map[string]string{"path": path, "space_released": released}
+		if deleted.SpaceReleased == vertracloud.ApplicationFileSpaceReleasedOnRestart {
+			return ui.Presentation{JSON: result, Human: map[string]any{"path": path, "message": fileDeleteNote()}}, nil
+		}
+		return result, nil
 	default:
 		return nil, fmt.Errorf("unknown file command %q", args[0])
 	}

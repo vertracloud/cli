@@ -425,10 +425,11 @@ func deploy(ctx context.Context, client *vertracloud.Client, args []string) (any
 	subdomain := f.String("subdomain", "", "subdomain, or random (with --web)")
 	description := f.String("description", "", "app description")
 	workspace := f.String("workspace", "", "workspace id")
+	autoRestartFlag := f.String("auto-restart", "", "on or off")
 	var envs repeatFlag
 	f.Var(&envs, "env", "environment variable KEY=VALUE (repeatable)")
 	pos, err := parse(f, args,
-		map[string]bool{"--name": true, "--ram": true, "--port": true, "--subdomain": true, "--description": true, "--workspace": true, "--env": true},
+		map[string]bool{"--name": true, "--ram": true, "--port": true, "--subdomain": true, "--description": true, "--workspace": true, "--env": true, "--auto-restart": true},
 		map[string]bool{"--web": true})
 	if err != nil {
 		return nil, err
@@ -446,6 +447,12 @@ func deploy(ctx context.Context, client *vertracloud.Client, args []string) (any
 	if *port < 0 || *port > 65535 {
 		return nil, errors.New("--port must be between 1 and 65535")
 	}
+	var autoRestart *bool
+	if *autoRestartFlag != "" {
+		if autoRestart, err = apps.AutoRestartValue(*autoRestartFlag); err != nil {
+			return nil, err
+		}
+	}
 	inputs := make([]vertracloud.ApplicationEnvironmentInput, 0, len(envs))
 	for _, pair := range envs {
 		k, v, ok := strings.Cut(pair, "=")
@@ -456,7 +463,7 @@ func deploy(ctx context.Context, client *vertracloud.Client, args []string) (any
 	}
 	params := vertracloud.ApplicationCreateFromImageParams{
 		ImageID: id, Name: *name, Memory: *ram, Description: *description, Web: *web,
-		Subdomain: *subdomain, Envs: inputs, WorkspaceID: *workspace,
+		Subdomain: *subdomain, Envs: inputs, WorkspaceID: *workspace, AutoRestart: autoRestart,
 	}
 	if *port != 0 {
 		p := *port

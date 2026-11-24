@@ -57,6 +57,9 @@ func Doctor(dir string) (DoctorResult, error) {
 		if domain := cfg["SUBDOMAIN"]; domain != "" && !subdomain.MatchString(domain) {
 			problems = append(problems, "SUBDOMAIN invalid")
 		}
+		if _, _, valid := AutoRestart(cfg); !valid {
+			problems = append(problems, "AUTORESTART invalid")
+		}
 		if len(problems) > 0 {
 			add("config", "error", strings.Join(problems, "; "))
 		} else {

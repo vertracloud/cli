@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -456,5 +457,27 @@ func TestTemplateValidateFailsWithIssuesAndLines(t *testing.T) {
 	}
 	if err := json.Unmarshal(out.Bytes(), &payload); err != nil || payload.Valid || len(payload.Issues) != 1 || payload.Issues[0].Line != 3 {
 		t.Fatalf("json: %s err=%v", out.String(), err)
+	}
+}
+
+func TestLinkShowKeepsAutoRestart(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VERTRA_API_KEY", "")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "vertracloud.config"), []byte("ID=app-1\nAUTORESTART=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+	var out, errOut bytes.Buffer
+	if code := run(context.Background(), []string{"link", "--show", "--json"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit=%d err=%s", code, errOut.String())
+	}
+	var got map[string]string
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got["AUTORESTART"] != "false" || got["ID"] != "app-1" {
+		t.Fatalf("output=%s err=%v", out.String(), err)
 	}
 }

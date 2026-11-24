@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -656,6 +657,18 @@ func credentialsReset(ctx context.Context, client *vertracloud.Client, args []st
 	if target != "password" && target != "certificate" {
 		return nil, fmt.Errorf("invalid credential reset target %q", target)
 	}
+	if target == "certificate" {
+		database, err := client.Databases.Get(ctx, id)
+		if apiErr, ok := rest.AsAPIError(err); ok && apiErr.IsPermissionError() {
+			err = nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if database.LegacyHost {
+			return nil, dashboardOnlyError(id)
+		}
+	}
 	if !*yes {
 		return nil, errors.New("db credentials reset requires --yes")
 	}
@@ -663,10 +676,24 @@ func credentialsReset(ctx context.Context, client *vertracloud.Client, args []st
 		return client.Databases.Credentials().Password().Reset(ctx, id)
 	}
 	certificate, err := client.Databases.Credentials().Certificate().Reset(ctx, id)
+	if apiErr, ok := rest.AsAPIError(err); ok && apiErr.Code == "WEBSITE_ONLY" {
+		return nil, dashboardOnlyError(id)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return certificate, nil
+}
+
+func dashboardOnlyError(id string) error {
+	message := "This database still uses its previous address. Moving it to the current address (resetting its certificates) is done only from the dashboard: %s"
+	switch ui.Locale {
+	case "pt":
+		message = "Este banco ainda usa o endereço anterior. A mudança para o endereço atual (redefinir os certificados) é feita só no painel: %s"
+	case "es":
+		message = "Esta base de datos aún usa la dirección anterior. El cambio a la dirección actual (reiniciar los certificados) se hace solo en el panel: %s"
+	}
+	return &rest.APIError{Code: "WEBSITE_ONLY", Message: fmt.Sprintf(message, "https://vertracloud.app/dashboard/databases/"+url.PathEscape(id))}
 }
 
 type stringList []string

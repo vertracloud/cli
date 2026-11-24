@@ -430,6 +430,28 @@ func TestDeployMapsFlags(t *testing.T) {
 	}
 }
 
+func TestDeployMapsAutoRestart(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want *bool
+	}{{nil, nil}, {[]string{"--auto-restart", "off"}, func() *bool { v := false; return &v }()}, {[]string{"--auto-restart", "on"}, func() *bool { v := true; return &v }()}} {
+		apps := &fakeApps{}
+		client := &vertracloud.Client{Images: &fakeImages{}, Apps: apps}
+		args := append([]string{"img-1", "--name", "bot", "--ram", "512"}, c.args...)
+		if _, err := Run(context.Background(), client, "deploy", args, true); err != nil {
+			t.Fatal(err)
+		}
+		got := apps.got.AutoRestart
+		if (got == nil) != (c.want == nil) || (got != nil && *got != *c.want) {
+			t.Fatalf("args=%v auto_restart=%v want %v", c.args, got, c.want)
+		}
+	}
+	client := &vertracloud.Client{Images: &fakeImages{}, Apps: &fakeApps{}}
+	if _, err := Run(context.Background(), client, "deploy", []string{"img-1", "--name", "bot", "--ram", "512", "--auto-restart", "x"}, true); err == nil {
+		t.Fatal("want error for invalid --auto-restart")
+	}
+}
+
 func TestDeployUsesSuggestedPortWhenPortIsOmitted(t *testing.T) {
 	port := 4000
 	apps := &fakeApps{}

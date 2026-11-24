@@ -749,3 +749,33 @@ func TestUnknownCommandAndFriendlyErrors(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestDeployViewShowsDatabasePasswordsOnceWithWarning(t *testing.T) {
+	view := DeployView{Job: vertracloud.TemplateDeploy{
+		ID: "job-1", Status: vertracloud.TemplateDeployStatusSucceeded, Version: "1.0.0",
+		DatabasePasswords: []vertracloud.TemplateDeployDatabasePassword{{DatabaseID: "db-1", ServiceID: "pg", Password: "p4ss-xyz"}},
+	}}
+	out := render(view)
+	for _, want := range []string{"Database passwords", "pg", "p4ss-xyz", "db-1", "cannot be read again"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDeployViewWithoutDatabasePasswordsHasNoSection(t *testing.T) {
+	out := render(DeployView{Job: vertracloud.TemplateDeploy{ID: "job-1", Status: vertracloud.TemplateDeployStatusSucceeded}})
+	if strings.Contains(out, "Database passwords") {
+		t.Fatalf("unexpected section:\n%s", out)
+	}
+}
+
+func TestDatabasePasswordMessagesExistInAllLocales(t *testing.T) {
+	for _, loc := range []string{"pt", "en", "es"} {
+		for _, key := range []string{"database_passwords", "database_password_once"} {
+			if messages[loc][key] == "" {
+				t.Errorf("%s lacks %q", loc, key)
+			}
+		}
+	}
+}

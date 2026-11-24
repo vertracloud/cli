@@ -35,6 +35,19 @@ func ReadProject(dir string) (map[string]string, error) {
 	return values, scanner.Err()
 }
 
+func AutoRestart(cfg map[string]string) (value bool, set bool, ok bool) {
+	raw := cfg["AUTORESTART"]
+	switch {
+	case raw == "":
+		return false, false, true
+	case strings.EqualFold(raw, "true"):
+		return true, true, true
+	case strings.EqualFold(raw, "false"):
+		return false, true, true
+	}
+	return false, true, false
+}
+
 func SetProjectID(dir, id string) error {
 	path := projectPath(dir)
 	data, err := os.ReadFile(path)

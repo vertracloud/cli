@@ -379,3 +379,84 @@ func TestNormalizeDomainsCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoRestartHasALabelInEveryLanguage(t *testing.T) {
+	for locale, want := range map[string]string{"pt": "Reiniciar automaticamente", "en": "Restart automatically", "es": "Reiniciar automáticamente"} {
+		var out bytes.Buffer
+		Render(&out, map[string]any{"id": "app-1", "name": "x", "auto_restart": false}, "app info app-1", locale)
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("%s: %s", locale, out.String())
+		}
+	}
+}
+
+func TestDatabaseCreateShowsThePasswordOnceAndDbInfoStillRedacts(t *testing.T) {
+	data := map[string]any{"id": "db-1", "name": "meu-db", "password": "pw-once"}
+	var created, info bytes.Buffer
+	Render(&created, data, "db create --name meu-db", "en")
+	if !strings.Contains(created.String(), "pw-once") || !strings.Contains(created.String(), "db credentials reset password") {
+		t.Fatalf("create output = %s", created.String())
+	}
+	Render(&info, map[string]any{"id": "db-1", "name": "meu-db", "password": "pw-once"}, "db info db-1", "en")
+	if strings.Contains(info.String(), "pw-once") || !strings.Contains(info.String(), "[redacted]") {
+		t.Fatalf("info output = %s", info.String())
+	}
+}
+
+func TestLegacyHostShowsOnlyWhenTrue(t *testing.T) {
+	var yes, no bytes.Buffer
+	Render(&yes, map[string]any{"id": "db-1", "name": "x", "legacy_host": true}, "db info db-1", "en")
+	Render(&no, map[string]any{"id": "db-1", "name": "x", "legacy_host": false}, "db info db-1", "en")
+	if !strings.Contains(yes.String(), "Legacy host") || strings.Contains(no.String(), "Legacy host") {
+		t.Fatalf("yes=%s no=%s", yes.String(), no.String())
+	}
+}
+
+func TestRenderMetricsListsEventsInThreeLanguages(t *testing.T) {
+	points := func() []any {
+		return []any{
+			map[string]any{"cpu": 1.0, "ram": 2.0, "storage": 3.0, "date": "2026-11-24T10:00:00Z", "network": []any{1.0, 2.0}, "events": []any{
+				map[string]any{"at": "2026-11-24T10:03:00Z", "kind": "auto_restart", "out_of_memory": false},
+				map[string]any{"at": "2026-11-24T10:01:00Z", "kind": "crash", "out_of_memory": true},
+			}},
+			map[string]any{"cpu": 1.0, "ram": 2.0, "storage": 3.0, "date": "2026-11-24T10:05:00Z", "network": []any{1.0, 2.0}, "events": []any{
+				map[string]any{"at": "2026-11-24T10:06:00Z", "kind": "restart", "out_of_memory": false},
+				map[string]any{"at": "2026-11-24T10:07:00Z", "kind": "other\x1b[2J", "out_of_memory": false},
+			}},
+		}
+	}
+	want := map[string][]string{
+		"pt": {"EVENTOS", "Falha (sem memória)", "Reinício automático", "Reinício"},
+		"en": {"EVENTS", "Failure (out of memory)", "Automatic restart", "Restart"},
+		"es": {"EVENTOS", "Fallo (sin memoria)", "Reinicio automático", "Reinicio"},
+	}
+	for locale, parts := range want {
+		for _, command := range []string{"app metrics --table", "db metrics"} {
+			var out bytes.Buffer
+			Render(&out, points(), command, locale)
+			got := out.String()
+			last := strings.Index(got, parts[0])
+			if last < 0 {
+				t.Fatalf("%s %s: no events heading:\n%s", locale, command, got)
+			}
+			for _, part := range parts[1:] {
+				i := strings.Index(got[last:], part)
+				if i < 0 {
+					t.Fatalf("%s %s: missing %q after the previous event:\n%s", locale, command, part, got)
+				}
+				last += i
+			}
+			if strings.Contains(got, "\x1b") {
+				t.Fatalf("%s %s: escape sequence in output: %q", locale, command, got)
+			}
+		}
+	}
+}
+
+func TestRenderMetricsWithoutEventsHasNoEventsSection(t *testing.T) {
+	var out bytes.Buffer
+	Render(&out, []any{map[string]any{"cpu": 1.0, "ram": 2.0, "storage": 3.0, "date": "2026-11-24T10:00:00Z", "network": []any{}, "events": []any{}}}, "app metrics", "en")
+	if strings.Contains(strings.ToUpper(out.String()), "EVENTS") {
+		t.Fatalf("unexpected events section:\n%s", out.String())
+	}
+}

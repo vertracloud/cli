@@ -50,6 +50,12 @@ vertra deploy         # upload the current directory
 vertra logs --follow  # follow the output live
 ```
 
+While a zero-downtime deploy prepares the new version, `vertra logs --follow` also shows its output, with each line labeled `[New version]` (`[Nova versão]` in Portuguese, `[Nueva versión]` in Spanish); the version that is serving keeps its lines unlabeled.
+
+The platform's own notes in that stream (dependency install, build, deploy discarded, auto-restart, image pull and so on) are printed as readable messages in the CLI language, prefixed with `[Vertra]`; anything the CLI does not recognize is printed as it came.
+
+`vertra app metrics` and `vertra db metrics` list below the table the restarts, automatic restarts and failures (with "out of memory" when that was the cause) that happened in the period; `--json` carries them as `events` in each point.
+
 Your key is stored in `~/.vertracloud/config.json`, readable only by your user. In CI, set `VERTRA_API_KEY` instead; it takes priority over the saved key.
 
 ## Commands
@@ -164,9 +170,18 @@ vertra app rollback [<id>] <release-id> [--env]     # go back to that version an
 vertra app config [<id>] --zero-downtime auto|on|off   # on: depends on the plan
 vertra app config [<id>] --auto-rollback on|off        # depends on the plan
 vertra app config [<id>] --health-path /healthz        # or --clear-health-path
+vertra app config [<id>] --auto-restart on|off         # restart the app when it crashes
 ```
 
 The health path must start with `/`, use visible characters without spaces and have at most 200 characters. `vertra app info` shows the current values.
+
+### Database credentials
+
+`vertra db create` shows the database password once, in the answer of the create call; store it right away. Any other command shows it as `[redacted]`. To get a new password, run `vertra db credentials reset password <id> --yes`.
+
+`vertra db credentials reset certificate <id> --yes` resets the certificates of a database. A database marked `legacy_host` still uses its previous address, and moving it to the current address is done only from the dashboard: for it the command does not call the API and prints the link to the database in the dashboard (the API answers 403 `WEBSITE_ONLY` to an API key).
+
+`vertra app file delete` reports `space_released`: `now`, or `on_restart` when the app still has the file open and the disk space comes back when it restarts.
 
 ### Custom domains
 

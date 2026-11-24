@@ -695,6 +695,7 @@ type fakeFiles struct {
 	uploadPath     string
 	uploadMessage  string
 	readContent    vertracloud.ApplicationFileContent
+	deleteResponse vertracloud.ApplicationFileDeleteResponse
 }
 
 func (fakeFiles) List(context.Context, string, vertracloud.ApplicationFileListParams, ...rest.RequestOpt) ([]vertracloud.ApplicationFile, error) {
@@ -712,8 +713,8 @@ func (fakeFiles) Write(context.Context, string, vertracloud.ApplicationFileWrite
 func (fakeFiles) Move(context.Context, string, vertracloud.ApplicationFileMoveBody, ...rest.RequestOpt) error {
 	return nil
 }
-func (fakeFiles) Delete(context.Context, string, vertracloud.ApplicationFileDeleteBody, ...rest.RequestOpt) error {
-	return nil
+func (f fakeFiles) Delete(context.Context, string, vertracloud.ApplicationFileDeleteBody, ...rest.RequestOpt) (vertracloud.ApplicationFileDeleteResponse, error) {
+	return f.deleteResponse, nil
 }
 func (f *fakeFiles) Upload(_ context.Context, id string, params vertracloud.ApplicationFileUploadParams, _ ...rest.RequestOpt) (vertracloud.ApplicationFileUploadResponse, error) {
 	f.uploadID = id
@@ -1106,5 +1107,168 @@ func TestDownloadWithWorkspaceNeedsAppID(t *testing.T) {
 	_, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: &fakeApps{}}, "download", []string{"--workspace", "ws-1"}, true)
 	if err == nil || !strings.Contains(err.Error(), "app id") {
 		t.Fatalf("err = %v, want an app id required", err)
+	}
+}
+
+func ptrBool(v bool) *bool { return &v }
+
+func TestUploadSendsAutoRestartFromFlagAndConfig(t *testing.T) {
+	original, _ := os.Getwd()
+	defer os.Chdir(original)
+	for _, tc := range []struct {
+		name string
+		cfg  string
+		args []string
+		want *bool
+	}{
+		{"flag off", "", []string{"--auto-restart", "off"}, ptrBool(false)},
+		{"config false", "AUTORESTART=false\n", nil, ptrBool(false)},
+		{"config upper case", "AUTORESTART=TRUE\n", nil, ptrBool(true)},
+		{"flag beats config", "AUTORESTART=false\n", []string{"--auto-restart", "on"}, ptrBool(true)},
+		{"neither", "", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "vertracloud.config"), []byte(tc.cfg), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chdir(dir); err != nil {
+				t.Fatal(err)
+			}
+			zipPath := filepath.Join(t.TempDir(), "a.zip")
+			if err := os.WriteFile(zipPath, []byte("PK"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			apps := &fakeApps{createdApp: vertracloud.Application{ID: "app-1", Status: vertracloud.ApplicationStatusUp}}
+			args := append([]string{"--name", "a", "--memory", "256", "--main", "index.js", "--file", zipPath}, tc.args...)
+			if _, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: apps}, "upload", args, true); err != nil {
+				t.Fatalf("upload: %v", err)
+			}
+			if !reflect.DeepEqual(apps.createArgs.AutoRestart, tc.want) {
+				t.Fatalf("AutoRestart = %v, want %v", apps.createArgs.AutoRestart, tc.want)
+			}
+		})
+	}
+}
+
+func TestUploadRejectsInvalidAutoRestart(t *testing.T) {
+	apps := &fakeApps{createdApp: vertracloud.Application{ID: "app-1", Status: vertracloud.ApplicationStatusUp}}
+	if _, err := runUpload(t, apps, "--auto-restart", "maybe"); err == nil || !strings.Contains(err.Error(), "--auto-restart must be on or off") {
+		t.Fatalf("err = %v", err)
+	}
+	if apps.createCalls != 0 {
+		t.Fatal("the app was created despite the invalid flag")
+	}
+}
+
+func TestUploadRejectsInvalidAutoRestartInConfig(t *testing.T) {
+	original, _ := os.Getwd()
+	defer os.Chdir(original)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "vertracloud.config"), []byte("AUTORESTART=maybe\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	apps := &fakeApps{createdApp: vertracloud.Application{ID: "app-1", Status: vertracloud.ApplicationStatusUp}}
+	zipPath := filepath.Join(t.TempDir(), "a.zip")
+	if err := os.WriteFile(zipPath, []byte("PK"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--name", "a", "--memory", "256", "--main", "index.js", "--file", zipPath}
+	_, err := RunWithOptions(context.Background(), &vertracloud.Client{Apps: apps}, "upload", args, true)
+	if err == nil || !strings.Contains(err.Error(), "AUTORESTART in vertracloud.config must be true or false") {
+		t.Fatalf("err = %v", err)
+	}
+	if apps.createCalls != 0 {
+		t.Fatal("the app was created despite the invalid config")
+	}
+}
+
+func TestConfigAutoRestartFlag(t *testing.T) {
+	apps := &fakeApps{}
+	if _, err := Run(context.Background(), &vertracloud.Client{Apps: apps}, "config", []string{"app-1", "--auto-restart", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	if apps.configBody == nil || apps.configBody.AutoRestart == nil || *apps.configBody.AutoRestart {
+		t.Fatalf("configBody = %#v", apps.configBody)
+	}
+	apps.configBody = nil
+	_, err := Run(context.Background(), &vertracloud.Client{Apps: apps}, "config", []string{"app-1", "--auto-restart", "x"})
+	if err == nil || !strings.Contains(err.Error(), "--auto-restart must be on or off") {
+		t.Fatalf("err = %v", err)
+	}
+	if apps.configBody != nil {
+		t.Fatalf("UpdateConfig was called: %#v", apps.configBody)
+	}
+}
+
+func TestFileDeleteReportsWhenTheSpaceComesBackOnRestart(t *testing.T) {
+	old := ui.Locale
+	t.Cleanup(func() { ui.Locale = old })
+	ui.Locale = "en"
+	apps := &fakeApps{files: fakeFiles{deleteResponse: vertracloud.ApplicationFileDeleteResponse{SpaceReleased: vertracloud.ApplicationFileSpaceReleasedOnRestart}}}
+	got, err := Run(context.Background(), &vertracloud.Client{Apps: apps}, "file", []string{"delete", "--app", "app-1", "--yes", "/log.txt"})
+	presentation, ok := got.(ui.Presentation)
+	if err != nil || !ok {
+		t.Fatalf("got %#v, err %v", got, err)
+	}
+	result := presentation.JSON.(map[string]string)
+	human := presentation.Human.(map[string]any)
+	if result["space_released"] != "on_restart" || !strings.Contains(human["message"].(string), "restarts") {
+		t.Fatalf("json=%v human=%v", result, human)
+	}
+}
+
+func TestFileDeleteWithSpaceReleasedNowIsAPlainResult(t *testing.T) {
+	apps := &fakeApps{files: fakeFiles{deleteResponse: vertracloud.ApplicationFileDeleteResponse{SpaceReleased: vertracloud.ApplicationFileSpaceReleasedNow}}}
+	got, err := Run(context.Background(), &vertracloud.Client{Apps: apps}, "file", []string{"delete", "--app", "app-1", "--yes", "/log.txt"})
+	if err != nil || !reflect.DeepEqual(got, map[string]string{"path": "/log.txt", "space_released": "now"}) {
+		t.Fatalf("got %#v, err %v", got, err)
+	}
+}
+
+func TestFollowLabelsNextLogsInEachLanguage(t *testing.T) {
+	old := ui.Locale
+	t.Cleanup(func() { ui.Locale = old })
+	for locale, label := range map[string]string{"pt": "Nova versão", "en": "New version", "es": "Nueva versión"} {
+		ui.Locale = locale
+		body := "event: logs\ndata: current\n\n" +
+			"event: next_logs\ndata: installing\\nbuilding\n\n" +
+			"event: next_logs\ndata: one\ndata: two\n\n"
+		stream, err := rest.OpenEventStream(context.Background(), sseBody(body), "/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := &vertracloud.Client{Apps: &fakeApps{stream: &vertracloud.ApplicationRealtimeEventStream{EventStream: stream}}}
+		var out bytes.Buffer
+		if err := Follow(context.Background(), client, []string{"app-1", "--follow"}, &out); err != nil {
+			t.Fatal(err)
+		}
+		want := "current\n[" + label + "] installing\\nbuilding\n[" + label + "] one\n[" + label + "] two\n"
+		if out.String() != want {
+			t.Fatalf("%s: got %q, want %q", locale, out.String(), want)
+		}
+	}
+}
+
+func TestFollowIgnoresHeartbeatMetricsAndUnknownEvents(t *testing.T) {
+	body := "event: heartbeat\ndata:\n\n" +
+		"event: metrics\ndata: {\"cpu_percent\":1}\n\n" +
+		"event: something_new\ndata: x\n\n" +
+		"event: system\ndata: 2026-11-24T10:00:00Z install_note:build_oom\n\n" +
+		"event: logs\ndata: line\n\n"
+	stream, err := rest.OpenEventStream(context.Background(), sseBody(body), "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &vertracloud.Client{Apps: &fakeApps{stream: &vertracloud.ApplicationRealtimeEventStream{EventStream: stream}}}
+	var out bytes.Buffer
+	if err := Follow(context.Background(), client, []string{"app-1", "--follow"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := "[Vertra] The build command ran out of memory and was stopped. Raise the app memory or reduce what the build processes.\nline\n"; out.String() != want {
+		t.Fatalf("got %q, want %q", out.String(), want)
 	}
 }

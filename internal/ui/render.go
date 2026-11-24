@@ -41,7 +41,7 @@ func RenderPaged(w io.Writer, value any, command, locale string, pageSize int, a
 	if log, ok := data.(string); ok {
 		data = LogText(log) // a bare string is log or file content: multi-line, colors allowed
 	} else {
-		data = localized(data, locale, strings.HasPrefix(command, "db credentials reset password"))
+		data = localized(data, locale, strings.HasPrefix(command, "db credentials reset password") || cmd == "db create")
 	}
 	kind := "app"
 	if strings.HasPrefix(cmd, "db") {
@@ -89,6 +89,9 @@ func RenderPaged(w io.Writer, value any, command, locale string, pageSize int, a
 		fmt.Fprintln(w)
 		if m, ok := data.(map[string]any); ok {
 			detail(w, m, kind, locale, "  ")
+			if password, _ := m["password"].(string); cmd == "db create" && password != "" {
+				fmt.Fprintf(w, "\n  %s\n", Yellow(fmt.Sprintf(text(locale, "password_once"), fmt.Sprint(m["id"]))))
+			}
 			if id, _ := m["id"].(string); id != "" && (cmd == "app upload" || cmd == "db create") {
 				section := map[string]string{"app": "apps", "db": "databases"}[kind]
 				fmt.Fprintf(w, "\n  %s %s\n", Dim("→"), Cyan("https://vertracloud.app/dashboard/"+section+"/"+id))
@@ -111,6 +114,9 @@ func RenderPaged(w io.Writer, value any, command, locale string, pageSize int, a
 		} else {
 			table(w, v, cmd, kind, locale)
 			listFooter(w, v, cmd, locale)
+		}
+		if cmd == "app metrics" || cmd == "db metrics" {
+			metricEvents(w, v, locale)
 		}
 	case map[string]any:
 		detail(w, v, kind, locale, "")
@@ -329,6 +335,49 @@ func table(w io.Writer, values []any, cmd, kind, locale string) {
 	}
 }
 
+func metricEvents(w io.Writer, points []any, locale string) {
+	type event struct {
+		at    time.Time
+		label string
+		color func(string) string
+	}
+	var events []event
+	for _, point := range points {
+		item, _ := point.(map[string]any)
+		list, _ := item["events"].([]any)
+		for _, raw := range list {
+			e, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			kind, _ := e["kind"].(string)
+			label, color := Plain(kind), Dim
+			switch kind {
+			case "restart":
+				label = text(locale, "event_restart")
+			case "auto_restart":
+				label, color = text(locale, "event_auto_restart"), Yellow
+			case "crash":
+				label, color = text(locale, "event_crash"), Red
+			}
+			if e["out_of_memory"] == true {
+				label += " (" + text(locale, "event_out_of_memory") + ")"
+			}
+			raw, _ := e["at"].(string)
+			at, _ := time.Parse(time.RFC3339Nano, raw)
+			events = append(events, event{at, formatDate(raw, locale) + "  " + label, color})
+		}
+	}
+	if len(events) == 0 {
+		return
+	}
+	sort.SliceStable(events, func(i, j int) bool { return events[i].at.Before(events[j].at) })
+	fmt.Fprintf(w, "\n%s\n", paint("1;2", strings.ToUpper(text(locale, "events"))))
+	for _, e := range events {
+		fmt.Fprintln(w, "  "+e.color(e.label))
+	}
+}
+
 func header(locale, key string) string { return strings.ToUpper(text(locale, key)) }
 
 func renderPages(w io.Writer, rows []any, cmd, kind, locale string, pageSize int) {
@@ -442,6 +491,11 @@ func cell(item map[string]any, key, kind, locale string) (string, func(string) s
 		if s, ok := value.(string); ok {
 			return s, Dim
 		}
+	case "legacy_host":
+		if value == true {
+			return text(locale, "yes"), nil
+		}
+		return "-", nil
 	case "language":
 		if s, ok := value.(string); ok && s != "" {
 			return s, languageColor(s)
@@ -978,7 +1032,7 @@ func formatDate(value, locale string) string {
 
 var translations = map[string]map[string]string{
 	"pt": {
-		"empty": "Nenhum resultado.", "status": "Estado", "id": "ID", "name": "Nome", "created_at": "Criado em", "updated_at": "Atualizado em",
+		"empty": "Nenhum resultado.", "events": "Eventos", "event_restart": "Reinício", "event_auto_restart": "Reinício automático", "event_crash": "Falha", "event_out_of_memory": "sem memória", "status": "Estado", "id": "ID", "name": "Nome", "created_at": "Criado em", "updated_at": "Atualizado em",
 		"last_snapshot": "Último snapshot", "offline_since": "Offline desde", "cpu": "CPU", "ram": "Memória", "storage": "Armazenamento",
 		"language": "Linguagem", "type": "Tipo", "description": "Descrição", "domain": "Domínio", "subdomain": "Subdomínio",
 		"domains": "Domínios", "hostname": "Domínio", "ssl_status": "SSL", "path_prefix": "Prefixo", "redirect_to": "Redireciona para", "active": "ativo", "applications": "Aplicações", "databases": "Bancos de dados",
@@ -1011,7 +1065,8 @@ var translations = map[string]map[string]string{
 		"doctor_summary": "%v ok · %v avisos · %v erros", "picker_hint": "↑/↓ navegar · enter selecionar · q sair",
 		"pagination_next": "enter/n próxima · p anterior · q sair",
 		"author":          "Autor", "release_status": "Estado", "rollback": "Voltar", "expires_at": "Expira em", "deploy": "Deploy",
-		"zero_downtime": "Zero downtime", "auto_rollback": "Rollback automático", "health_check_path": "Health check",
+		"zero_downtime": "Zero downtime", "auto_rollback": "Rollback automático", "health_check_path": "Health check", "auto_restart": "Reiniciar automaticamente", "legacy_host": "Host antigo",
+		"password_once":     "A senha só aparece agora. Para ver outra, redefina: vertra db credentials reset password %s --yes",
 		"release_no_log":    "Esta versão não tem log (não houve falha ou o log expirou).",
 		"releases_more":     "Página %d de %d. Veja a próxima com: --page %d",
 		"rollback_summary":  "O código volta para a versão %s e a aplicação reinicia. Os dados que o app criou não são apagados.",
@@ -1028,7 +1083,7 @@ var translations = map[string]map[string]string{
 		"err_auto_rollback_plan":    "O seu plano não inclui rollback automático.",
 	},
 	"es": {
-		"empty": "No hay resultados.", "status": "Estado", "id": "ID", "name": "Nombre", "created_at": "Creado", "updated_at": "Actualizado",
+		"empty": "No hay resultados.", "events": "Eventos", "event_restart": "Reinicio", "event_auto_restart": "Reinicio automático", "event_crash": "Fallo", "event_out_of_memory": "sin memoria", "status": "Estado", "id": "ID", "name": "Nombre", "created_at": "Creado", "updated_at": "Actualizado",
 		"last_snapshot": "Última instantánea", "offline_since": "Sin conexión desde", "cpu": "CPU", "ram": "Memoria", "storage": "Almacenamiento",
 		"language": "Lenguaje", "type": "Tipo", "description": "Descripción", "domain": "Dominio", "subdomain": "Subdominio",
 		"domains": "Dominios", "hostname": "Dominio", "ssl_status": "SSL", "path_prefix": "Prefijo", "redirect_to": "Redirige a", "active": "activo", "applications": "Aplicaciones", "databases": "Bases de datos",
@@ -1061,7 +1116,8 @@ var translations = map[string]map[string]string{
 		"doctor_summary": "%v ok · %v avisos · %v errores", "picker_hint": "↑/↓ navegar · enter seleccionar · q salir",
 		"pagination_next": "enter/n siguiente · p anterior · q salir",
 		"author":          "Autor", "source": "Origen", "release_status": "Estado", "rollback": "Volver", "expires_at": "Expira el", "deploy": "Deploy",
-		"zero_downtime": "Zero downtime", "auto_rollback": "Rollback automático", "health_check_path": "Health check",
+		"zero_downtime": "Zero downtime", "auto_rollback": "Rollback automático", "health_check_path": "Health check", "auto_restart": "Reiniciar automáticamente", "legacy_host": "Host antiguo",
+		"password_once":     "La contraseña solo se muestra ahora. Para ver otra, restablécela: vertra db credentials reset password %s --yes",
 		"release_no_log":    "Esta versión no tiene log (no hubo fallo o el log expiró).",
 		"releases_more":     "Página %d de %d. Mira la siguiente con: --page %d",
 		"rollback_summary":  "El código vuelve a la versión %s y la aplicación se reinicia. Los datos que creó la app no se borran.",
@@ -1078,7 +1134,7 @@ var translations = map[string]map[string]string{
 		"err_auto_rollback_plan":    "Tu plan no incluye rollback automático.",
 	},
 	"en": {
-		"empty": "No results.", "status": "Status", "id": "ID", "name": "Name", "created_at": "Created", "updated_at": "Updated",
+		"empty": "No results.", "events": "Events", "event_restart": "Restart", "event_auto_restart": "Automatic restart", "event_crash": "Failure", "event_out_of_memory": "out of memory", "status": "Status", "id": "ID", "name": "Name", "created_at": "Created", "updated_at": "Updated",
 		"last_snapshot": "Last snapshot", "offline_since": "Offline since", "cpu": "CPU", "ram": "Memory", "storage": "Storage",
 		"language": "Language", "type": "Type", "description": "Description", "domain": "Domain", "subdomain": "Subdomain",
 		"domains": "Domains", "hostname": "Domain", "ssl_status": "SSL", "path_prefix": "Prefix", "redirect_to": "Redirects to", "active": "active", "applications": "Applications", "databases": "Databases",
@@ -1111,7 +1167,8 @@ var translations = map[string]map[string]string{
 		"doctor_summary": "%v passed · %v warnings · %v errors", "picker_hint": "↑/↓ move · enter select · q quit",
 		"pagination_next": "enter/n next · p previous · q quit",
 		"author":          "Author", "source": "Origin", "release_status": "Status", "rollback": "Rollback", "expires_at": "Expires", "deploy": "Deploy",
-		"zero_downtime": "Zero downtime", "auto_rollback": "Auto rollback", "health_check_path": "Health check",
+		"zero_downtime": "Zero downtime", "auto_rollback": "Auto rollback", "health_check_path": "Health check", "auto_restart": "Restart automatically", "legacy_host": "Legacy host",
+		"password_once":     "The password is shown only now. To see another one, reset it: vertra db credentials reset password %s --yes",
 		"release_no_log":    "This release has no log (it did not fail, or the log expired).",
 		"releases_more":     "Page %d of %d. See the next with: --page %d",
 		"rollback_summary":  "The code goes back to version %s and the application restarts. Data the app created is not deleted.",

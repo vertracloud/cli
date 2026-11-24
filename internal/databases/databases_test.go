@@ -3,6 +3,8 @@ package databases
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -252,5 +254,178 @@ func TestDeleteAndResetWithYesRunRightAwayAndReturnTheID(t *testing.T) {
 	}
 	if fake.deleted != "db-1" || fake.reset != "db-1" {
 		t.Errorf("deleted=%q reset=%q", fake.deleted, fake.reset)
+	}
+}
+
+type certService struct {
+	vertracloud.DatabasesCredentialsCertificateService
+	fake *certFake
+}
+
+func (s certService) Reset(context.Context, string, ...rest.RequestOpt) (vertracloud.DatabaseCertificateReset, error) {
+	s.fake.resets++
+	return s.fake.cert, s.fake.resetErr
+}
+
+type certCredentials struct {
+	vertracloud.DatabasesCredentialsService
+	fake *certFake
+}
+
+func (c certCredentials) Certificate() vertracloud.DatabasesCredentialsCertificateService {
+	return certService{fake: c.fake}
+}
+
+type certFake struct {
+	vertracloud.DatabasesService
+	db       vertracloud.Database
+	cert     vertracloud.DatabaseCertificateReset
+	resetErr error
+	getErr   error
+	resets   int
+}
+
+func (f *certFake) Get(context.Context, string, ...rest.RequestOpt) (vertracloud.Database, error) {
+	return f.db, f.getErr
+}
+
+func (f *certFake) Credentials() vertracloud.DatabasesCredentialsService {
+	return certCredentials{fake: f}
+}
+
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	return func() string {
+		_ = w.Close()
+		os.Stderr = old
+		b, _ := io.ReadAll(r)
+		return string(b)
+	}
+}
+
+func runCertificateReset(t *testing.T, fake *certFake, args ...string) (any, error, string) {
+	t.Helper()
+	read := captureStderr(t)
+	got, err := Run(context.Background(), &vertracloud.Client{Databases: fake}, "credentials", append([]string{"reset", "certificate", "db-1"}, args...))
+	return got, err, read()
+}
+
+func requireDashboardOnly(t *testing.T, err error, fake *certFake) {
+	t.Helper()
+	apiErr, ok := rest.AsAPIError(err)
+	if !ok || apiErr.Code != "WEBSITE_ONLY" {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(apiErr.Message, "https://vertracloud.app/dashboard/databases/db-1") {
+		t.Fatalf("message = %q", apiErr.Message)
+	}
+	if fake.resets != 0 {
+		t.Fatalf("resets = %d", fake.resets)
+	}
+}
+
+func TestCertificateResetOfALegacyHostDatabaseDoesNotCallTheAPIAndPointsToTheDashboard(t *testing.T) {
+	old := ui.Locale
+	t.Cleanup(func() { ui.Locale = old })
+	ui.Locale = "en"
+	for _, args := range [][]string{{"--yes"}, {}} {
+		fake := &certFake{db: vertracloud.Database{ID: "db-1", LegacyHost: true}}
+		got, err, stderr := runCertificateReset(t, fake, args...)
+		if got != nil || stderr != "" {
+			t.Fatalf("got %#v stderr %q", got, stderr)
+		}
+		requireDashboardOnly(t, err, fake)
+	}
+}
+
+func TestCertificateResetTurnsAWebsiteOnlyRejectionIntoTheDashboardMessage(t *testing.T) {
+	fake := &certFake{db: vertracloud.Database{ID: "db-1"}, resetErr: &rest.APIError{Code: "WEBSITE_ONLY", Message: "server text"}}
+	old := ui.Locale
+	t.Cleanup(func() { ui.Locale = old })
+	ui.Locale = "en"
+	_, err, _ := runCertificateReset(t, fake, "--yes")
+	if fake.resets != 1 {
+		t.Fatalf("resets = %d", fake.resets)
+	}
+	apiErr, ok := rest.AsAPIError(err)
+	if !ok || apiErr.Code != "WEBSITE_ONLY" {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(apiErr.Message, "https://vertracloud.app/dashboard/databases/db-1") || strings.Contains(err.Error(), "server text") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCertificateResetWithAKeyWithoutDatabasesReadStillCallsReset(t *testing.T) {
+	fake := &certFake{
+		getErr: &rest.APIError{Status: 403, Code: "INSUFFICIENT_SCOPE"},
+		cert:   vertracloud.DatabaseCertificateReset{Host: "vertra-cloud-db1.db.ny1.example"},
+	}
+	got, err, _ := runCertificateReset(t, fake, "--yes")
+	if err != nil || fake.resets != 1 || got.(vertracloud.DatabaseCertificateReset).Host != "vertra-cloud-db1.db.ny1.example" {
+		t.Fatalf("got %#v err %v resets %d", got, err, fake.resets)
+	}
+}
+
+func TestCertificateResetStillFailsWhenTheLookupFailsForOtherReasons(t *testing.T) {
+	boom := errors.New("boom")
+	fake := &certFake{getErr: boom}
+	if _, err, _ := runCertificateReset(t, fake, "--yes"); !errors.Is(err, boom) || fake.resets != 0 {
+		t.Fatalf("err = %v resets %d", err, fake.resets)
+	}
+}
+
+func TestCertificateResetKeepsOtherErrors(t *testing.T) {
+	boom := errors.New("boom")
+	fake := &certFake{db: vertracloud.Database{ID: "db-1"}, resetErr: boom}
+	if _, err, _ := runCertificateReset(t, fake, "--yes"); !errors.Is(err, boom) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCertificateResetOfACurrentDatabaseResetsAndSaysNothingExtra(t *testing.T) {
+	fake := &certFake{db: vertracloud.Database{ID: "db-1"}, cert: vertracloud.DatabaseCertificateReset{Host: "vertra-cloud-db1.db.ny1.example"}}
+	got, err, stderr := runCertificateReset(t, fake, "--yes")
+	if err != nil || fake.resets != 1 || got.(vertracloud.DatabaseCertificateReset).Host != "vertra-cloud-db1.db.ny1.example" {
+		t.Fatalf("got %#v err %v resets %d", got, err, fake.resets)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestCertificateResetOfACurrentDatabaseWithoutYesAsksForYes(t *testing.T) {
+	fake := &certFake{db: vertracloud.Database{ID: "db-1"}}
+	_, err, stderr := runCertificateReset(t, fake)
+	if err == nil || !strings.Contains(err.Error(), "requires --yes") || fake.resets != 0 || stderr != "" {
+		t.Fatalf("err=%v resets=%d stderr=%q", err, fake.resets, stderr)
+	}
+}
+
+func TestDashboardOnlyErrorIsLocalizedAndLinksTheDatabase(t *testing.T) {
+	old := ui.Locale
+	t.Cleanup(func() { ui.Locale = old })
+	for locale, want := range map[string]string{"en": "only from the dashboard", "pt": "só no painel", "es": "solo en el panel"} {
+		ui.Locale = locale
+		apiErr, ok := rest.AsAPIError(dashboardOnlyError("db-1"))
+		if !ok || !strings.Contains(apiErr.Message, want) || !strings.HasSuffix(apiErr.Message, "https://vertracloud.app/dashboard/databases/db-1") {
+			t.Fatalf("%s: %+v", locale, apiErr)
+		}
+	}
+}
+
+func TestPasswordResetDoesNotLookTheDatabaseUp(t *testing.T) {
+	fake := &certFake{db: vertracloud.Database{ID: "db-1", LegacyHost: true}}
+	read := captureStderr(t)
+	_, err := Run(context.Background(), &vertracloud.Client{Databases: fake}, "credentials", []string{"reset", "password", "db-1"})
+	stderr := read()
+	if err == nil || !strings.Contains(err.Error(), "requires --yes") || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
 	}
 }

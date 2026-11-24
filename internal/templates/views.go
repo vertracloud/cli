@@ -279,12 +279,27 @@ func (v DeployView) RenderHuman(w io.Writer, _ string) {
 			fmt.Fprintf(w, "    %s  %s  %s\n", ui.Plain(string(r.ResourceType)), ui.Plain(r.Name), ui.Dim(ui.Plain(r.ResourceID)))
 		}
 	}
-	if len(j.Outputs) == 0 {
+	if len(j.Outputs) > 0 {
+		renderOutputs(w, j.Outputs)
+	}
+	renderDatabasePasswords(w, j.DatabasePasswords)
+}
+
+func renderDatabasePasswords(w io.Writer, passwords []vertracloud.TemplateDeployDatabasePassword) {
+	if len(passwords) == 0 {
 		return
 	}
+	fmt.Fprintf(w, "\n  %s\n", ui.Bold(text("database_passwords")))
+	for _, p := range passwords {
+		fmt.Fprintf(w, "    %s  %s  %s\n", ui.Plain(p.ServiceID), ui.Plain(p.Password), ui.Dim(ui.Plain(p.DatabaseID)))
+	}
+	fmt.Fprintf(w, "\n  %s\n", ui.Yellow(text("database_password_once")))
+}
+
+func renderOutputs(w io.Writer, outputs []vertracloud.TemplateDeployOutput) {
 	fmt.Fprintf(w, "\n  %s\n", ui.Bold(text("outputs")))
 	secret := false
-	for _, o := range j.Outputs {
+	for _, o := range outputs {
 		value := outputText(o)
 		label := ui.Plain(I18n(o.Label))
 		switch {
