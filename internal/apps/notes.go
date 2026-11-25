@@ -19,7 +19,17 @@ var (
 	installNote      = regexp.MustCompile(`^install_note:(oom|failed|build_failed|build_oom|build_timeout|timeout|shield)(?::(\d+))?$`)
 	restartNote      = regexp.MustCompile(`^restart_note:(\w+)$`)
 	shieldNote       = regexp.MustCompile(`^shield_note:(\w+):(in|out)$`)
+	runStarted       = regexp.MustCompile(`^run_note:started:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$`)
 )
+
+var hiddenMessages = map[string]bool{
+	"Loading historical logs": true,
+	"Historical logs loaded":  true,
+	"Starting live logs":      true,
+	"Attached to live logs":   true,
+	"Resuming live logs":      true,
+	"Container stopped":       true,
+}
 
 const (
 	noteLabelPrefix     = "[Vertra]"
@@ -27,15 +37,19 @@ const (
 	totalTimeoutSeconds = "1500"
 )
 
-func systemLine(data string) string {
+func systemLine(data string) (string, bool) {
 	message := ui.Plain(data)
 	if m := noteStamp.FindStringSubmatch(message); m != nil {
 		message = m[1]
 	}
-	if text, ok := translateNote(ui.Locale, strings.TrimSpace(message)); ok {
-		return ui.Dim(noteLabelPrefix) + " " + text
+	message = strings.TrimSpace(message)
+	if hiddenMessages[message] || runStarted.MatchString(message) {
+		return "", false
 	}
-	return ui.LogText(data)
+	if text, ok := translateNote(ui.Locale, message); ok {
+		return ui.Dim(noteLabelPrefix) + " " + text, true
+	}
+	return ui.LogText(data), true
 }
 
 func translateNote(locale, message string) (string, bool) {
@@ -48,6 +62,10 @@ func translateNote(locale, message string) (string, bool) {
 
 func parseNote(message string) (string, []any, bool) {
 	switch message {
+	case "Connected to realtime log stream":
+		return "connected", nil, true
+	case "No logs found":
+		return "no_logs", nil, true
 	case "app_restarted":
 		return "app_restarted", nil, true
 	case "install_note:started":
@@ -88,6 +106,8 @@ func parseNote(message string) (string, []any, bool) {
 			return "crash_loop", nil, true
 		case "oom_killed":
 			return "oom_killed", nil, true
+		case "unsupported_node":
+			return "unsupported_node", nil, true
 		}
 		return "restarted_automatically", nil, true
 	}
@@ -132,6 +152,13 @@ func parseDeployNote(message string) (string, []any, bool) {
 	parts := strings.Split(message, ":")
 	short := func(id string) string { return strings.ToLower(id[:7]) }
 	switch {
+	case parts[1] == "recreated" && (len(parts) == 2 || (len(parts) == 3 && discardReason.MatchString(parts[2]))):
+		if len(parts) == 3 {
+			if reason := "recreated_" + parts[2]; knownNote(reason) {
+				return reason, nil, true
+			}
+		}
+		return "recreated", nil, true
 	case len(parts) == 3 && parts[1] == "failed" && strictUUID.MatchString(parts[2]):
 		return "deploy_failed", []any{short(parts[2])}, true
 	case len(parts) == 4 && parts[1] == "rollback" && strictUUID.MatchString(parts[2]) && strictUUID.MatchString(parts[3]):
@@ -176,6 +203,12 @@ func noteText(locale, key string, args ...any) string {
 
 var noteTexts = map[string]map[string]string{
 	"en": {
+		"connected":                   "Connected in real time",
+		"no_logs":                     "No logs found",
+		"unsupported_node":            "App stopped — the runtime's Node.js version is not supported by this project. Change the runtime version in the app settings.",
+		"recreated":                   "Restarted without the zero-downtime deploy.",
+		"recreated_plan_memory":       "Restarted without the zero-downtime deploy: the plan has no free memory to run both versions at once.",
+		"recreated_recreate_required": "Restarted without the zero-downtime deploy: the change required recreating the app.",
 		"app_restarted":               "Application restarted",
 		"install_started":             "Dependency install started",
 		"install_done":                "Installation finished",
@@ -219,6 +252,12 @@ var noteTexts = map[string]map[string]string{
 		"cause_timeout":               "it did not respond in time",
 	},
 	"pt": {
+		"connected":                   "Conectado em tempo real",
+		"no_logs":                     "Nenhum log encontrado",
+		"unsupported_node":            "Aplicação encerrada — a versão do Node.js do runtime não é compatível com este projeto. Troque a versão do runtime nas configurações do app.",
+		"recreated":                   "Reiniciado sem usar o deploy sem downtime.",
+		"recreated_plan_memory":       "Reiniciado sem usar o deploy sem downtime: o plano não tem memória livre para rodar as duas versões ao mesmo tempo.",
+		"recreated_recreate_required": "Reiniciado sem usar o deploy sem downtime: a mudança exigiu recriar o app.",
 		"app_restarted":               "Aplicação reiniciada",
 		"install_started":             "Instalação de dependências iniciada",
 		"install_done":                "Instalação concluída",
@@ -262,6 +301,12 @@ var noteTexts = map[string]map[string]string{
 		"cause_timeout":               "ela não respondeu dentro do tempo",
 	},
 	"es": {
+		"connected":                   "Conectado en tiempo real",
+		"no_logs":                     "No se encontraron logs",
+		"unsupported_node":            "Aplicación detenida — la versión de Node.js del runtime no es compatible con este proyecto. Cambia la versión del runtime en los ajustes de la app.",
+		"recreated":                   "Reiniciado sin usar el despliegue sin downtime.",
+		"recreated_plan_memory":       "Reiniciado sin usar el despliegue sin downtime: el plan no tiene memoria libre para ejecutar las dos versiones a la vez.",
+		"recreated_recreate_required": "Reiniciado sin usar el despliegue sin downtime: el cambio requirió recrear la app.",
 		"app_restarted":               "Aplicación reiniciada",
 		"install_started":             "Instalación de dependencias iniciada",
 		"install_done":                "Instalación finalizada",

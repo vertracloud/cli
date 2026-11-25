@@ -578,7 +578,7 @@ func followLine(ev vertracloud.ApplicationRealtimeEvent) (string, bool) {
 	case "", vertracloud.ApplicationRealtimeEventTypeLogs:
 		return ui.LogText(ev.Data), true
 	case vertracloud.ApplicationRealtimeEventTypeSystem:
-		return systemLine(ev.Data), true
+		return systemLine(ev.Data)
 	case vertracloud.ApplicationRealtimeEventTypeNextLogs:
 		label := ui.Dim("[" + nextVersionLabel() + "]")
 		lines := strings.Split(strings.TrimRight(ui.LogText(ev.Data), "\n"), "\n")
