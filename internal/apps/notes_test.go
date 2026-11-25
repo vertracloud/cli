@@ -121,7 +121,6 @@ func TestSystemLineOtherNotes(t *testing.T) {
 		"No logs found":                                    "No logs found",
 		"deploy_note:recreated":                            "Restarted without the zero-downtime deploy.",
 		"deploy_note:recreated:plan_memory":                "Restarted without the zero-downtime deploy: the plan has no free memory to run both versions at once.",
-		"deploy_note:recreated:host_memory":                "Restarted without the zero-downtime deploy: the server had no free memory.",
 		"deploy_note:recreated:recreate_required":          "Restarted without the zero-downtime deploy: the change required recreating the app.",
 		"deploy_note:recreated:brand_new_reason":           "Restarted without the zero-downtime deploy.",
 	}
@@ -178,14 +177,12 @@ func TestSystemLineRecreatedInEachLanguage(t *testing.T) {
 		"pt": {
 			"deploy_note:recreated":                   "Reiniciado sem usar o deploy sem downtime.",
 			"deploy_note:recreated:plan_memory":       "Reiniciado sem usar o deploy sem downtime: o plano não tem memória livre para rodar as duas versões ao mesmo tempo.",
-			"deploy_note:recreated:host_memory":       "Reiniciado sem usar o deploy sem downtime: o servidor estava sem memória livre.",
 			"deploy_note:recreated:recreate_required": "Reiniciado sem usar o deploy sem downtime: a mudança exigiu recriar o app.",
 			"deploy_note:recreated:other":             "Reiniciado sem usar o deploy sem downtime.",
 		},
 		"es": {
 			"deploy_note:recreated":                   "Reiniciado sin usar el despliegue sin downtime.",
 			"deploy_note:recreated:plan_memory":       "Reiniciado sin usar el despliegue sin downtime: el plan no tiene memoria libre para ejecutar las dos versiones a la vez.",
-			"deploy_note:recreated:host_memory":       "Reiniciado sin usar el despliegue sin downtime: el servidor no tenía memoria libre.",
 			"deploy_note:recreated:recreate_required": "Reiniciado sin usar el despliegue sin downtime: el cambio requirió recrear la app.",
 			"deploy_note:recreated:other":             "Reiniciado sin usar el despliegue sin downtime.",
 		},
