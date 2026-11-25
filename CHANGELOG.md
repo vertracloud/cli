@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.11](https://github.com/vertracloud/cli/compare/v0.3.10...v0.3.11) (2026-11-25)
+
+
+### Features
+
+* **logs:** translate the remaining console notes and hide stream housekeeping ([f99fcbf](https://github.com/vertracloud/cli/commit/f99fcbfd5d4de06cf2800dac721009d12c0bb478))
+
+
+### Bug Fixes
+
+* **logs:** drop the host memory reason from the restart note ([54b7847](https://github.com/vertracloud/cli/commit/54b7847b4c7aca5cf4d3cb33fb3d0d706c4ac52d))
+
 ## [0.3.10](https://github.com/vertracloud/cli/compare/v0.3.9...v0.3.10) (2026-11-24)
 
 
