@@ -18,6 +18,14 @@ func withLocale(t *testing.T, locale string) {
 	ui.Locale = locale
 }
 
+func renderNote(in string) string {
+	line, ok := systemLine(in)
+	if !ok {
+		return "<hidden>"
+	}
+	return line
+}
+
 func TestSystemLineTranslatesWithAndWithoutTimestamp(t *testing.T) {
 	withLocale(t, "en")
 	want := "[Vertra] Dependency install stopped — plan memory exhausted."
@@ -26,7 +34,7 @@ func TestSystemLineTranslatesWithAndWithoutTimestamp(t *testing.T) {
 		"2026-11-24T10:00:00Z install_note:oom",
 		"2026-11-24T10:00:00.123456789Z install_note:oom",
 	} {
-		if got := systemLine(in); got != want {
+		if got := renderNote(in); got != want {
 			t.Fatalf("%q: got %q, want %q", in, got, want)
 		}
 	}
@@ -49,7 +57,7 @@ func TestSystemLineInstallNotes(t *testing.T) {
 		"install_note:shield":        "Build stopped by network protection — traffic above the allowance during the deploy.",
 	}
 	for in, want := range cases {
-		if got := systemLine(in); got != "[Vertra] "+want {
+		if got := renderNote(in); got != "[Vertra] "+want {
 			t.Fatalf("%q: got %q", in, got)
 		}
 	}
@@ -71,7 +79,7 @@ func TestSystemLineDeployDiscarded(t *testing.T) {
 	}
 	for reason, cause := range causes {
 		want := "[Vertra] Deploy 0a1b2c3 was discarded: " + cause + ". The previous version is still online."
-		if got := systemLine("deploy_note:discarded:" + deployID + ":" + reason); got != want {
+		if got := renderNote("deploy_note:discarded:" + deployID + ":" + reason); got != want {
 			t.Fatalf("%s: got %q", reason, got)
 		}
 	}
@@ -80,14 +88,14 @@ func TestSystemLineDeployDiscarded(t *testing.T) {
 		"deploy_note:discarded:" + deployID,
 		"deploy_note:discarded:" + deployID + ":something_new",
 	} {
-		if got := systemLine(in); got != plain {
+		if got := renderNote(in); got != plain {
 			t.Fatalf("%q: got %q", in, got)
 		}
 	}
-	if got := systemLine("deploy_note:failed:" + deployID); got != "[Vertra] Deploy 0a1b2c3 crashed on start." {
+	if got := renderNote("deploy_note:failed:" + deployID); got != "[Vertra] Deploy 0a1b2c3 crashed on start." {
 		t.Fatal(got)
 	}
-	if got := systemLine("deploy_note:rollback:" + deployID + ":" + previousID); got != "[Vertra] Deploy 0a1b2c3 crashed on start. We went back to 4e5f6a7." {
+	if got := renderNote("deploy_note:rollback:" + deployID + ":" + previousID); got != "[Vertra] Deploy 0a1b2c3 crashed on start. We went back to 4e5f6a7." {
 		t.Fatal(got)
 	}
 }
@@ -108,9 +116,17 @@ func TestSystemLineOtherNotes(t *testing.T) {
 		"restart_note:oom_killed":                          "App stopped — plan memory exhausted.",
 		"shield_note:rate_limit:in":                        "Vertra Shield: app stopped for exceeding inbound request limits.",
 		"shield_note:burst:out":                            "Vertra Shield: app stopped for an outbound traffic burst.",
+		"restart_note:unsupported_node":                    "App stopped — the runtime's Node.js version is not supported by this project. Change the runtime version in the app settings.",
+		"Connected to realtime log stream":                 "Connected in real time",
+		"No logs found":                                    "No logs found",
+		"deploy_note:recreated":                            "Restarted without the zero-downtime deploy.",
+		"deploy_note:recreated:plan_memory":                "Restarted without the zero-downtime deploy: the plan has no free memory to run both versions at once.",
+		"deploy_note:recreated:host_memory":                "Restarted without the zero-downtime deploy: the server had no free memory.",
+		"deploy_note:recreated:recreate_required":          "Restarted without the zero-downtime deploy: the change required recreating the app.",
+		"deploy_note:recreated:brand_new_reason":           "Restarted without the zero-downtime deploy.",
 	}
 	for in, want := range cases {
-		if got := systemLine(in); got != "[Vertra] "+want {
+		if got := renderNote(in); got != "[Vertra] "+want {
 			t.Fatalf("%q: got %q", in, got)
 		}
 	}
@@ -120,7 +136,10 @@ func TestSystemLineLeavesUnknownAndMalformedRaw(t *testing.T) {
 	withLocale(t, "en")
 	for _, in := range []string{
 		"install_note:brand_new",
-		"2026-11-24T10:00:00Z run_note:started:2026-11-24T10:00:00Z",
+		"run_note:started:soon",
+		"deploy_note:recreated:Bad-Reason",
+		"deploy_note:recreated:a:b",
+		"Some other control message",
 		"deploy_note:discarded:not-a-uuid",
 		"deploy_note:discarded:" + deployID + ":Bad-Reason",
 		"deploy_note:discarded:" + deployID + ":a:b",
@@ -129,18 +148,64 @@ func TestSystemLineLeavesUnknownAndMalformedRaw(t *testing.T) {
 		"free text from the app",
 		"",
 	} {
-		if got := systemLine(in); got != in {
+		if got := renderNote(in); got != in {
 			t.Fatalf("%q: got %q", in, got)
+		}
+	}
+}
+
+func TestSystemLineHidesControlMessagesAndRunMarker(t *testing.T) {
+	withLocale(t, "en")
+	for _, in := range []string{
+		"Loading historical logs",
+		"Historical logs loaded",
+		"Starting live logs",
+		"Attached to live logs",
+		"Resuming live logs",
+		"Container stopped",
+		"2026-11-24T10:00:00Z Container stopped",
+		"run_note:started:2026-11-24T10:00:00Z",
+		"2026-11-24T10:00:00Z run_note:started:2026-11-24T10:00:00.123Z",
+	} {
+		if line, ok := systemLine(in); ok {
+			t.Fatalf("%q should be hidden, got %q", in, line)
+		}
+	}
+}
+
+func TestSystemLineRecreatedInEachLanguage(t *testing.T) {
+	cases := map[string]map[string]string{
+		"pt": {
+			"deploy_note:recreated":                   "Reiniciado sem usar o deploy sem downtime.",
+			"deploy_note:recreated:plan_memory":       "Reiniciado sem usar o deploy sem downtime: o plano não tem memória livre para rodar as duas versões ao mesmo tempo.",
+			"deploy_note:recreated:host_memory":       "Reiniciado sem usar o deploy sem downtime: o servidor estava sem memória livre.",
+			"deploy_note:recreated:recreate_required": "Reiniciado sem usar o deploy sem downtime: a mudança exigiu recriar o app.",
+			"deploy_note:recreated:other":             "Reiniciado sem usar o deploy sem downtime.",
+		},
+		"es": {
+			"deploy_note:recreated":                   "Reiniciado sin usar el despliegue sin downtime.",
+			"deploy_note:recreated:plan_memory":       "Reiniciado sin usar el despliegue sin downtime: el plan no tiene memoria libre para ejecutar las dos versiones a la vez.",
+			"deploy_note:recreated:host_memory":       "Reiniciado sin usar el despliegue sin downtime: el servidor no tenía memoria libre.",
+			"deploy_note:recreated:recreate_required": "Reiniciado sin usar el despliegue sin downtime: el cambio requirió recrear la app.",
+			"deploy_note:recreated:other":             "Reiniciado sin usar el despliegue sin downtime.",
+		},
+	}
+	for locale, table := range cases {
+		withLocale(t, locale)
+		for in, want := range table {
+			if got := renderNote(in); got != "[Vertra] "+want {
+				t.Fatalf("%s %q: got %q", locale, in, got)
+			}
 		}
 	}
 }
 
 func TestSystemLineSanitizesUntranslatedText(t *testing.T) {
 	withLocale(t, "en")
-	if got := systemLine("note\x1b]52;c;Zm9v\x07 done"); got != "note done" {
+	if got := renderNote("note\x1b]52;c;Zm9v\x07 done"); got != "note done" {
 		t.Fatalf("got %q", got)
 	}
-	if got := systemLine("install_note:oom\x1b[2J"); got != "[Vertra] Dependency install stopped — plan memory exhausted." {
+	if got := renderNote("install_note:oom\x1b[2J"); got != "[Vertra] Dependency install stopped — plan memory exhausted." {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -165,7 +230,7 @@ func TestSystemLineInEachLanguage(t *testing.T) {
 	for locale, cases := range notes {
 		withLocale(t, locale)
 		for in, want := range cases {
-			if got := systemLine(in); got != "[Vertra] "+want {
+			if got := renderNote(in); got != "[Vertra] "+want {
 				t.Fatalf("%s %q: got %q", locale, in, got)
 			}
 		}

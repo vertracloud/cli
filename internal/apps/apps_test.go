@@ -1272,3 +1272,36 @@ func TestFollowIgnoresHeartbeatMetricsAndUnknownEvents(t *testing.T) {
 		t.Fatalf("got %q, want %q", out.String(), want)
 	}
 }
+
+func TestFollowDeployWithoutDowntimeReadsInOrder(t *testing.T) {
+	withLocale(t, "en")
+	body := "event: logs\ndata: serving\n\n" +
+		"event: system\ndata: Connected to realtime log stream\n\n" +
+		"event: system\ndata: Loading historical logs\n\n" +
+		"event: system\ndata: install_note:started\n\n" +
+		"event: next_logs\ndata: npm ci\n\n" +
+		"event: next_metrics\ndata: {\"cpu_percent\":1}\n\n" +
+		"event: system\ndata: run_note:started:2026-11-24T10:00:00Z\n\n" +
+		"event: system\ndata: deploy_note:discarded:" + deployID + ":install_oom\n\n" +
+		"event: system\ndata: deploy_note:recreated:plan_memory\n\n" +
+		"event: logs\ndata: > install_note:done\n\n"
+	stream, err := rest.OpenEventStream(context.Background(), sseBody(body), "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &vertracloud.Client{Apps: &fakeApps{stream: &vertracloud.ApplicationRealtimeEventStream{EventStream: stream}}}
+	var out bytes.Buffer
+	if err := Follow(context.Background(), client, []string{"app-1", "--follow"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	want := "serving\n" +
+		"[Vertra] Connected in real time\n" +
+		"[Vertra] Dependency install started\n" +
+		"[New version] npm ci\n" +
+		"[Vertra] Deploy 0a1b2c3 was discarded: it ran out of memory while installing dependencies. The previous version is still online.\n" +
+		"[Vertra] Restarted without the zero-downtime deploy: the plan has no free memory to run both versions at once.\n" +
+		"> install_note:done\n"
+	if out.String() != want {
+		t.Fatalf("got %q, want %q", out.String(), want)
+	}
+}

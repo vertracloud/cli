@@ -52,7 +52,7 @@ vertra logs --follow  # follow the output live
 
 While a zero-downtime deploy prepares the new version, `vertra logs --follow` also shows its output, with each line labeled `[New version]` (`[Nova versão]` in Portuguese, `[Nueva versión]` in Spanish); the version that is serving keeps its lines unlabeled.
 
-The platform's own notes in that stream (dependency install, build, deploy discarded, auto-restart, image pull and so on) are printed as readable messages in the CLI language, prefixed with `[Vertra]`; anything the CLI does not recognize is printed as it came.
+The platform's own notes in that stream (dependency install, build, deploy discarded or restarted without the zero-downtime path, auto-restart, image pull and so on) are printed as readable messages in the CLI language, prefixed with `[Vertra]`; anything the CLI does not recognize is printed as it came, and the stream's own housekeeping messages are hidden.
 
 `vertra app metrics` and `vertra db metrics` list below the table the restarts, automatic restarts and failures (with "out of memory" when that was the cause) that happened in the period; `--json` carries them as `events` in each point.
 
