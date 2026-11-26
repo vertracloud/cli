@@ -228,8 +228,8 @@ var listColumns = map[string][]string{
 	"template versions":   {"version", "security", "created_at"},
 	"template categories": {"category", "count"},
 	"stack list":          {"name", "id", "status", "members", "ram", "template", "updated_at"},
-	"app list":            {"name", "id", "status", "cpu", "ram", "language", "domain", "folder"},
-	"db list":             {"name", "id", "type", "version", "status", "cpu", "ram", "folder"},
+	"app list":            {"name", "id", "status", "region", "node", "cpu", "ram", "language", "domain", "folder"},
+	"db list":             {"name", "id", "type", "version", "status", "region", "node", "cpu", "ram", "folder"},
 	"db versions":         {"type", "recommended", "available"},
 	"app status":          {"name", "id", "status", "cpu", "ram", "uptime"},
 	"db status":           {"name", "id", "status", "cpu", "ram", "storage", "uptime"},
@@ -247,7 +247,7 @@ var listColumns = map[string][]string{
 var hidden = map[string]bool{
 	"owner_id": true, "owner_plan": true,
 	"deleted_at": true, "resource_organization": true, "position": true, "installing": true, "restore_job_id": true, "running": true,
-	"favorite": true, "user_id": true, "workspace_id": true, "cluster": true, "is_owner": true, "folder_color": true, "ram_used": true, "ram_limit": true,
+	"favorite": true, "user_id": true, "workspace_id": true, "is_owner": true, "folder_color": true, "ram_used": true, "ram_limit": true,
 }
 
 func table(w io.Writer, values []any, cmd, kind, locale string) {
@@ -434,7 +434,7 @@ func detail(w io.Writer, m map[string]any, kind, locale, indent string) {
 	}
 }
 
-var priority = []string{"name", "display_name", "email", "id", "status", "shield_cooldown", "plan", "type", "language", "version", "ram", "cpu", "storage", "network", "uptime", "subdomain", "domains", "host", "port"}
+var priority = []string{"name", "display_name", "email", "id", "status", "shield_cooldown", "plan", "type", "language", "version", "region", "node", "ram", "cpu", "storage", "network", "uptime", "subdomain", "domains", "host", "port"}
 
 // orderedKeys puts identity and state first, the rest alphabetically and
 // timestamps last. Tables also skip nested values that do not fit a cell.
@@ -1034,7 +1034,7 @@ var translations = map[string]map[string]string{
 	"pt": {
 		"empty": "Nenhum resultado.", "events": "Eventos", "event_restart": "Reinício", "event_auto_restart": "Reinício automático", "event_crash": "Falha", "event_out_of_memory": "sem memória", "status": "Estado", "id": "ID", "name": "Nome", "created_at": "Criado em", "updated_at": "Atualizado em",
 		"last_snapshot": "Último snapshot", "offline_since": "Offline desde", "cpu": "CPU", "ram": "Memória", "storage": "Armazenamento",
-		"language": "Linguagem", "type": "Tipo", "description": "Descrição", "domain": "Domínio", "subdomain": "Subdomínio",
+		"language": "Linguagem", "region": "Região", "node": "Nó", "type": "Tipo", "description": "Descrição", "domain": "Domínio", "subdomain": "Subdomínio",
 		"domains": "Domínios", "hostname": "Domínio", "ssl_status": "SSL", "path_prefix": "Prefixo", "redirect_to": "Redireciona para", "active": "ativo", "applications": "Aplicações", "databases": "Bancos de dados",
 		"email": "E-mail", "locale": "Idioma", "current": "Atual", "available": "Disponíveis", "ok": "Concluído.", "file": "Arquivo",
 		"folder": "Pasta", "not_configured": "Não configurado", "website": "Site", "bot": "Bot",
@@ -1085,7 +1085,7 @@ var translations = map[string]map[string]string{
 	"es": {
 		"empty": "No hay resultados.", "events": "Eventos", "event_restart": "Reinicio", "event_auto_restart": "Reinicio automático", "event_crash": "Fallo", "event_out_of_memory": "sin memoria", "status": "Estado", "id": "ID", "name": "Nombre", "created_at": "Creado", "updated_at": "Actualizado",
 		"last_snapshot": "Última instantánea", "offline_since": "Sin conexión desde", "cpu": "CPU", "ram": "Memoria", "storage": "Almacenamiento",
-		"language": "Lenguaje", "type": "Tipo", "description": "Descripción", "domain": "Dominio", "subdomain": "Subdominio",
+		"language": "Lenguaje", "region": "Región", "node": "Nodo", "type": "Tipo", "description": "Descripción", "domain": "Dominio", "subdomain": "Subdominio",
 		"domains": "Dominios", "hostname": "Dominio", "ssl_status": "SSL", "path_prefix": "Prefijo", "redirect_to": "Redirige a", "active": "activo", "applications": "Aplicaciones", "databases": "Bases de datos",
 		"email": "Correo", "locale": "Idioma", "current": "Actual", "available": "Disponibles", "ok": "Completado.", "file": "Archivo",
 		"folder": "Carpeta", "not_configured": "No configurado", "website": "Sitio web", "bot": "Bot",
@@ -1136,7 +1136,7 @@ var translations = map[string]map[string]string{
 	"en": {
 		"empty": "No results.", "events": "Events", "event_restart": "Restart", "event_auto_restart": "Automatic restart", "event_crash": "Failure", "event_out_of_memory": "out of memory", "status": "Status", "id": "ID", "name": "Name", "created_at": "Created", "updated_at": "Updated",
 		"last_snapshot": "Last snapshot", "offline_since": "Offline since", "cpu": "CPU", "ram": "Memory", "storage": "Storage",
-		"language": "Language", "type": "Type", "description": "Description", "domain": "Domain", "subdomain": "Subdomain",
+		"language": "Language", "region": "Region", "node": "Node", "type": "Type", "description": "Description", "domain": "Domain", "subdomain": "Subdomain",
 		"domains": "Domains", "hostname": "Domain", "ssl_status": "SSL", "path_prefix": "Prefix", "redirect_to": "Redirects to", "active": "active", "applications": "Applications", "databases": "Databases",
 		"email": "Email", "locale": "Language", "current": "Current", "available": "Available", "ok": "Done.", "file": "File",
 		"folder": "Folder", "not_configured": "Not configured", "website": "Website", "bot": "Bot",
