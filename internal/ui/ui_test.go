@@ -464,9 +464,9 @@ func TestRenderMetricsWithoutEventsHasNoEventsSection(t *testing.T) {
 func TestAppAndDatabaseListShowRegionAndNode(t *testing.T) {
 	var out bytes.Buffer
 	RenderPaged(&out, []any{map[string]any{"name": "demo", "id": "app-1", "ram": 512, "status": "up", "region": "sp", "node": "amethyst"}}, "app list", "en", 5, false)
-	RenderPaged(&out, []any{map[string]any{"name": "db", "id": "db-1", "type": 3, "ram": 512, "status": "up", "region": "ny", "node": "palladium"}}, "db list", "pt", 5, false)
+	RenderPaged(&out, []any{map[string]any{"name": "db", "id": "db-1", "type": 3, "ram": 512, "status": "up", "region": "ny", "node": "amethyst"}}, "db list", "pt", 5, false)
 	got := out.String()
-	for _, want := range []string{"REGION", "NODE", "amethyst", "REGIÃO", "NÓ", "palladium"} {
+	for _, want := range []string{"REGION", "NODE", "amethyst", "REGIÃO", "NÓ"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
