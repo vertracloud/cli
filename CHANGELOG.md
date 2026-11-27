@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/vertracloud/cli/compare/v0.3.11...v0.4.0) (2026-11-27)
+
+
+### Features
+
+* **deps:** sdk-api-go v0.5.0 ([2bb7c69](https://github.com/vertracloud/cli/commit/2bb7c69120d1d964eea8e7a25982dc431734e7fd))
+* show region and node for apps and databases ([d20b2d2](https://github.com/vertracloud/cli/commit/d20b2d2b84267fb5d42b4337ca61bdfffb0d0408))
+
 ## [0.3.11](https://github.com/vertracloud/cli/compare/v0.3.10...v0.3.11) (2026-11-25)
 
 
